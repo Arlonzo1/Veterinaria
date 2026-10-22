@@ -1,0 +1,12 @@
+{
+    "terminal.integrated.fontSize": 13,
+    "files.encoding": "utf8",
+    "files.associations": {
+        "*.pl": "prolog"
+    },
+    "files.exclude": {
+        "**/~$*": true,
+        "**/__pycache__": true
+    },
+    "indentRainbow.excludedLanguages": ["prolog", "markdown", "plaintext"]
+}

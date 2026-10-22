@@ -1,0 +1,39 @@
+==============================================================================
+ TriaVet · Script de pruebas por consola (Python + SWI-Prolog vía PySwip)
+ Ejecutado: 2026-10-21 11:54:02
+==============================================================================
+Base de conocimiento cargada: base_conocimiento.pl
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA 2 · Caso normal 2: Múltiples diagnósticos y recolección
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Comprobar que setof/3 reúne varias conclusiones en una sola lista sin duplicados (la entrada repite 'vomito'), que cada una tiene su propia severidad y que el resultado se ordena de mayor a menor urgencia. También verifica diagnosticar_todos/5.
+Entrada  : especie=perro, edad=30 meses, sexo=hembra
+           hallazgos=['vacunacion_completa', 'ingesta_xilitol', 'vomito', 'vomito', 'temblores', 'poliuria', 'polidipsia', 'perdida_de_peso']
+Consulta : ?- analizar_caso('perro', 30, 'hembra', ['vacunacion_completa', 'ingesta_xilitol', 'vomito', 'vomito', 'temblores', 'poliuria', 'polidipsia', 'perdida_de_peso'], Validos, Ignorados, Alarmas, Diagnosticos, Prioridad, Recomendacion).
+           ?- diagnosticar_todos('perro', 30, 'hembra', ['vacunacion_completa', 'ingesta_xilitol', 'vomito', 'vomito', 'temblores', 'poliuria', 'polidipsia', 'perdida_de_peso'], Diagnosticos).
+Esperado : diagnósticos = [enfermedad_renal_cronica, intoxicacion]
+           prioridad = CRÍTICO
+           primero en la lista = intoxicacion
+           severidades: intoxicacion=critico, enfermedad_renal_cronica=medio
+           no debe incluir: gastroenteritis_aguda
+Obtenido : diagnósticos = [intoxicacion, enfermedad_renal_cronica] · prioridad = CRÍTICO
+           diagnosticar_todos/5 -> ['enfermedad_renal_cronica', 'intoxicacion']
+           Prioridad del caso : CRÍTICO
+           Recomendación      : URGENCIA VITAL: acuda de inmediato a un servicio veterinario de urgencias.
+           Hallazgos válidos  : ingesta xilitol, perdida de peso, polidipsia, poliuria, temblores, vacunacion completa, vomito
+             1. Intoxicación  [CRÍTICO]  certeza 85 %
+                Sustento   : ingesta xilitol, vomito, temblores
+                Agravantes : compromiso neurologico
+                Indicación : No induzca el vómito ni dé remedios caseros sin indicación veterinaria. Lleve el empaque o una muestra de la sustancia.
+             2. Enfermedad renal crónica  [MEDIO]  certeza 75 %
+                Sustento   : poliuria, polidipsia, perdida de peso, vomito
+                Indicación : Mantenga agua fresca disponible siempre y programe consulta para pruebas de función renal.
+Veredicto: ✔ PASÓ
+
+==============================================================================
+ RESUMEN
+==============================================================================
+ ✔ Prueba  2 · Caso normal 2: Múltiples diagnósticos y recolección
+
+ 1 de 1 pruebas aprobadas.

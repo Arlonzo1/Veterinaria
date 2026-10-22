@@ -1,0 +1,11 @@
+# Configuración de Streamlit para TriaVet (main.py)
+
+[browser]
+gatherUsageStats = false
+
+[server]
+# Puerto por defecto de la interfaz: http://localhost:8501
+port = 8501
+
+[theme]
+primaryColor = "#0f766e"

@@ -1,0 +1,222 @@
+==============================================================================
+ TriaVet · Script de pruebas por consola (Python + SWI-Prolog vía PySwip)
+ Ejecutado: 2026-10-21 19:21:51
+==============================================================================
+Base de conocimiento cargada: base_conocimiento.pl
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA 1 · Caso normal 1: Diagnóstico único claro
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Comprobar el encadenamiento de 3 niveles: los signos activan el estado intermedio abdomen_agudo (Nivel 2), que junto con el perfil lleva a una única conclusión de severidad crítica (Nivel 3).
+Entrada  : especie=perro, edad=48 meses, sexo=macho
+           hallazgos=['raza_torax_profundo', 'abdomen_distendido', 'arcadas_improductivas', 'salivacion_excesiva', 'inquietud']
+Consulta : ?- analizar_caso('perro', 48, 'macho', ['raza_torax_profundo', 'abdomen_distendido', 'arcadas_improductivas', 'salivacion_excesiva', 'inquietud'], Validos, Ignorados, Alarmas, Diagnosticos, Prioridad, Recomendacion).
+Esperado : diagnósticos = [dilatacion_torsion_gastrica]
+           prioridad = CRÍTICO
+           severidades: dilatacion_torsion_gastrica=critico
+Obtenido : diagnósticos = [dilatacion_torsion_gastrica] · prioridad = CRÍTICO
+           Prioridad del caso : CRÍTICO
+           Recomendación      : URGENCIA VITAL: acuda de inmediato a un servicio veterinario de urgencias.
+           Hallazgos válidos  : abdomen distendido, arcadas improductivas, inquietud, raza torax profundo, salivacion excesiva
+             1. Dilatación-torsión gástrica  [CRÍTICO]  certeza 95 %
+                Sustento   : abdomen distendido, arcadas improductivas, salivacion excesiva, inquietud, raza torax profundo
+                Indicación : No le dé agua ni comida ni intente provocarle el vómito. Trasládelo de inmediato a urgencias.
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA 2 · Caso normal 2: Múltiples diagnósticos y recolección
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Comprobar que setof/3 reúne varias conclusiones en una sola lista sin duplicados (la entrada repite 'vomito'), que cada una tiene su propia severidad y que el resultado se ordena de mayor a menor urgencia. También verifica diagnosticar_todos/5.
+Entrada  : especie=perro, edad=30 meses, sexo=hembra
+           hallazgos=['vacunacion_completa', 'ingesta_xilitol', 'vomito', 'vomito', 'temblores', 'poliuria', 'polidipsia', 'perdida_de_peso']
+Consulta : ?- analizar_caso('perro', 30, 'hembra', ['vacunacion_completa', 'ingesta_xilitol', 'vomito', 'vomito', 'temblores', 'poliuria', 'polidipsia', 'perdida_de_peso'], Validos, Ignorados, Alarmas, Diagnosticos, Prioridad, Recomendacion).
+           ?- diagnosticar_todos('perro', 30, 'hembra', ['vacunacion_completa', 'ingesta_xilitol', 'vomito', 'vomito', 'temblores', 'poliuria', 'polidipsia', 'perdida_de_peso'], Diagnosticos).
+Esperado : diagnósticos = [enfermedad_renal_cronica, intoxicacion]
+           prioridad = CRÍTICO
+           primero en la lista = intoxicacion
+           severidades: intoxicacion=critico, enfermedad_renal_cronica=medio
+           no debe incluir: gastroenteritis_aguda
+Obtenido : diagnósticos = [intoxicacion, enfermedad_renal_cronica] · prioridad = CRÍTICO
+           diagnosticar_todos/5 -> ['enfermedad_renal_cronica', 'intoxicacion']
+           Prioridad del caso : CRÍTICO
+           Recomendación      : URGENCIA VITAL: acuda de inmediato a un servicio veterinario de urgencias.
+           Hallazgos válidos  : ingesta xilitol, perdida de peso, polidipsia, poliuria, temblores, vacunacion completa, vomito
+             1. Intoxicación  [CRÍTICO]  certeza 85 %
+                Sustento   : ingesta xilitol, vomito, temblores
+                Agravantes : compromiso neurologico
+                Indicación : No induzca el vómito ni dé remedios caseros sin indicación veterinaria. Lleve el empaque o una muestra de la sustancia.
+             2. Enfermedad renal crónica  [MEDIO]  certeza 75 %
+                Sustento   : poliuria, polidipsia, perdida de peso, vomito
+                Indicación : Mantenga agua fresca disponible siempre y programe consulta para pruebas de función renal.
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA 3 · Caso de exclusión: Negación por fallo (\+) y corte (!)
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Un cachorro con diarrea con sangre sería candidato a parvovirosis, pero la vacunación completa la descarta con \+. Queda la gastroenteritis aguda, cuya severidad base (bajo) sube a medio por ser cachorro: el corte en etapa_vida/3 y en severidad/3 elige una sola rama.
+Entrada  : especie=perro, edad=5 meses, sexo=macho
+           hallazgos=['vacunacion_completa', 'vomito', 'diarrea_con_sangre', 'anorexia']
+Consulta : ?- analizar_caso('perro', 5, 'macho', ['vacunacion_completa', 'vomito', 'diarrea_con_sangre', 'anorexia'], Validos, Ignorados, Alarmas, Diagnosticos, Prioridad, Recomendacion).
+Esperado : diagnósticos = [gastroenteritis_aguda]
+           prioridad = MEDIO
+           severidades: gastroenteritis_aguda=medio
+           no debe incluir: parvovirosis
+Obtenido : diagnósticos = [gastroenteritis_aguda] · prioridad = MEDIO
+           Prioridad del caso : MEDIO
+           Recomendación      : PRIORITARIO: programe una consulta veterinaria en las próximas 24 a 48 horas y vigile la evolución.
+           Hallazgos válidos  : anorexia, diarrea con sangre, vacunacion completa, vomito
+             1. Gastroenteritis aguda inespecífica  [MEDIO]  certeza 70 %
+                Sustento   : vomito, diarrea con sangre, anorexia
+                Agravantes : paciente vulnerable
+                Indicación : Ofrezca agua en pequeñas cantidades y vigile; consulte si los signos duran más de 24 horas o empeoran.
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA 4 · Caso borde 1: Datos insuficientes / lista parcial
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : La lista cumple solo parte del perfil del moquillo (falta 'fiebre', requisito obligatorio verificado con contiene_todos/2) e incluye un hallazgo inexistente que particionar/3 debe ignorar. setof/3 no encuentra soluciones y se aplica el valor por defecto.
+Entrada  : especie=perro, edad=60 meses, sexo=hembra
+           hallazgos=['secrecion_nasal', 'tos', 'vacunacion_incompleta', 'estornudo_raro']
+Consulta : ?- analizar_caso('perro', 60, 'hembra', ['secrecion_nasal', 'tos', 'vacunacion_incompleta', 'estornudo_raro'], Validos, Ignorados, Alarmas, Diagnosticos, Prioridad, Recomendacion).
+Esperado : diagnósticos = [sin_diagnostico_concluyente]
+           prioridad = BAJO
+           no debe incluir: moquillo
+           ignorados = ['estornudo_raro']
+Obtenido : diagnósticos = [sin_diagnostico_concluyente] · prioridad = BAJO
+           Prioridad del caso : BAJO
+           Recomendación      : NO URGENTE: vigile al paciente en casa y consulte si los signos persisten o empeoran.
+           Hallazgos válidos  : secrecion nasal, tos, vacunacion incompleta
+           Hallazgos ignorados: estornudo_raro
+             1. Sin diagnóstico concluyente  [BAJO]  certeza 0 %
+                Indicación : Los hallazgos no permiten orientar un diagnóstico; observe la evolución y consulte si aparecen nuevos signos.
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA 5 · Caso borde 2: Lista vacía sin errores en Python
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Con una lista vacía, Prolog debe responder con la cláusula por defecto (prioridad indeterminado y ningún diagnóstico) y Python debe mostrarlo sin lanzar excepciones.
+Entrada  : especie=gato, edad=24 meses, sexo=hembra
+           hallazgos=[]
+Consulta : ?- analizar_caso('gato', 24, 'hembra', [], Validos, Ignorados, Alarmas, Diagnosticos, Prioridad, Recomendacion).
+Esperado : diagnósticos = [(ninguno)]
+           prioridad = INDETERMINADO
+           alarmas = []
+Obtenido : diagnósticos = [(ninguno)] · prioridad = INDETERMINADO
+           Prioridad del caso : INDETERMINADO
+           Recomendación      : SIN HALLAZGOS VÁLIDOS: no es posible orientar el caso; revise los signos ingresados.
+           Hallazgos válidos  : (ninguno)
+           Diagnósticos       : (ninguno)
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA 6 · Complementario: Contraste del caso 3 sin vacunación
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Con los mismos signos del caso 3 pero sin vacunación completa, la parvovirosis sí se concluye y excluye a la gastroenteritis (excluye/2). Su severidad base (alto) sube a crítico por ser cachorro.
+Entrada  : especie=perro, edad=5 meses, sexo=macho
+           hallazgos=['vomito', 'diarrea_con_sangre', 'anorexia']
+Consulta : ?- analizar_caso('perro', 5, 'macho', ['vomito', 'diarrea_con_sangre', 'anorexia'], Validos, Ignorados, Alarmas, Diagnosticos, Prioridad, Recomendacion).
+Esperado : diagnósticos = [parvovirosis]
+           prioridad = CRÍTICO
+           severidades: parvovirosis=critico
+           no debe incluir: gastroenteritis_aguda
+Obtenido : diagnósticos = [parvovirosis] · prioridad = CRÍTICO
+           Prioridad del caso : CRÍTICO
+           Recomendación      : URGENCIA VITAL: acuda de inmediato a un servicio veterinario de urgencias.
+           Hallazgos válidos  : anorexia, diarrea con sangre, vomito
+             1. Parvovirosis canina  [CRÍTICO]  certeza 80 %
+                Sustento   : diarrea con sangre, vomito, anorexia
+                Agravantes : paciente vulnerable
+                Indicación : Aísle al cachorro de otros perros, no lo obligue a comer y llévelo hoy mismo al veterinario: la deshidratación avanza rápido.
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA 7 · Complementario: Exclusión entre diagnósticos (gato macho)
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : El caso cumple el perfil de cistitis, pero la retención urinaria en un gato macho concluye obstrucción uretral, que la excluye mediante \+ excluido/2.
+Entrada  : especie=gato, edad=36 meses, sexo=macho
+           hallazgos=['esfuerzo_para_orinar', 'ausencia_de_orina', 'sangre_en_orina', 'vocalizacion_dolor']
+Consulta : ?- analizar_caso('gato', 36, 'macho', ['esfuerzo_para_orinar', 'ausencia_de_orina', 'sangre_en_orina', 'vocalizacion_dolor'], Validos, Ignorados, Alarmas, Diagnosticos, Prioridad, Recomendacion).
+Esperado : diagnósticos = [obstruccion_uretral]
+           prioridad = CRÍTICO
+           no debe incluir: cistitis
+Obtenido : diagnósticos = [obstruccion_uretral] · prioridad = CRÍTICO
+           Prioridad del caso : CRÍTICO
+           Recomendación      : URGENCIA VITAL: acuda de inmediato a un servicio veterinario de urgencias.
+           Hallazgos válidos  : ausencia de orina, esfuerzo para orinar, sangre en orina, vocalizacion dolor
+             1. Obstrucción uretral felina  [CRÍTICO]  certeza 85 %
+                Sustento   : esfuerzo para orinar, ausencia de orina, vocalizacion dolor
+                Indicación : No espere a que orine por sí solo ni le presione el abdomen. Trasládelo de inmediato a urgencias.
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA 8 · Complementario: Mismo gato sin retención urinaria
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Sin 'ausencia_de_orina' no hay retención, la obstrucción no es candidata y la cistitis deja de estar excluida.
+Entrada  : especie=gato, edad=36 meses, sexo=macho
+           hallazgos=['esfuerzo_para_orinar', 'miccion_frecuente', 'sangre_en_orina', 'vocalizacion_dolor']
+Consulta : ?- analizar_caso('gato', 36, 'macho', ['esfuerzo_para_orinar', 'miccion_frecuente', 'sangre_en_orina', 'vocalizacion_dolor'], Validos, Ignorados, Alarmas, Diagnosticos, Prioridad, Recomendacion).
+Esperado : diagnósticos = [cistitis]
+           prioridad = MEDIO
+           no debe incluir: obstruccion_uretral
+Obtenido : diagnósticos = [cistitis] · prioridad = MEDIO
+           Prioridad del caso : MEDIO
+           Recomendación      : PRIORITARIO: programe una consulta veterinaria en las próximas 24 a 48 horas y vigile la evolución.
+           Hallazgos válidos  : esfuerzo para orinar, miccion frecuente, sangre en orina, vocalizacion dolor
+             1. Cistitis / infección urinaria baja  [MEDIO]  certeza 95 %
+                Sustento   : miccion frecuente, sangre en orina, esfuerzo para orinar, vocalizacion dolor
+                Indicación : Asegure agua fresca y arenero o paseos frecuentes; programe consulta. Si deja de orinar, acuda a urgencias.
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA 9 · Complementario: Signo de alarma sin diagnóstico
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Las convulsiones no completan ningún perfil, pero son un signo de alarma: la primera cláusula de prioridad_caso/3 (con corte) fija la prioridad en crítico y indicacion_para/3 cambia la indicación por defecto por la de urgencias.
+Entrada  : especie=perro, edad=24 meses, sexo=macho
+           hallazgos=['convulsiones']
+Consulta : ?- analizar_caso('perro', 24, 'macho', ['convulsiones'], Validos, Ignorados, Alarmas, Diagnosticos, Prioridad, Recomendacion).
+Esperado : diagnósticos = [sin_diagnostico_concluyente]
+           prioridad = CRÍTICO
+           alarmas = ['convulsiones']
+           la indicación de sin_diagnostico_concluyente menciona «urgencias»
+Obtenido : diagnósticos = [sin_diagnostico_concluyente] · prioridad = CRÍTICO
+           Prioridad del caso : CRÍTICO
+           Recomendación      : URGENCIA VITAL: acuda de inmediato a un servicio veterinario de urgencias.
+           Hallazgos válidos  : convulsiones
+           Signos de alarma   : convulsiones
+             1. Sin diagnóstico concluyente  [CRÍTICO]  certeza 0 %
+                Agravantes : compromiso neurologico
+                Indicación : Hay signos de alarma aunque no se identifica la causa: acuda de inmediato a urgencias veterinarias.
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA 10 · Complementario: Datos del paciente no válidos
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Especie y edad fuera del dominio: datos_paciente_validos/1 falla y la cláusula por defecto de analizar_caso/10 responde datos_invalidos sin error en Python.
+Entrada  : especie=conejo, edad=abc meses, sexo=macho
+           hallazgos=['vomito']
+Consulta : ?- analizar_caso('conejo', 'abc', 'macho', ['vomito'], Validos, Ignorados, Alarmas, Diagnosticos, Prioridad, Recomendacion).
+Esperado : diagnósticos = [(ninguno)]
+           prioridad = DATOS NO VÁLIDOS
+Obtenido : diagnósticos = [(ninguno)] · prioridad = DATOS NO VÁLIDOS
+           Prioridad del caso : DATOS NO VÁLIDOS
+           Recomendación      : DATOS DEL PACIENTE NO VÁLIDOS: revise la especie (perro/gato), la edad en meses (0-300) y el sexo (macho/hembra).
+           Hallazgos válidos  : (ninguno)
+           Hallazgos ignorados: vomito
+           Diagnósticos       : (ninguno)
+Veredicto: ✔ PASÓ
+
+==============================================================================
+ RESUMEN
+==============================================================================
+ ✔ Prueba  1 · Caso normal 1: Diagnóstico único claro
+ ✔ Prueba  2 · Caso normal 2: Múltiples diagnósticos y recolección
+ ✔ Prueba  3 · Caso de exclusión: Negación por fallo (\+) y corte (!)
+ ✔ Prueba  4 · Caso borde 1: Datos insuficientes / lista parcial
+ ✔ Prueba  5 · Caso borde 2: Lista vacía sin errores en Python
+ ✔ Prueba  6 · Complementario: Contraste del caso 3 sin vacunación
+ ✔ Prueba  7 · Complementario: Exclusión entre diagnósticos (gato macho)
+ ✔ Prueba  8 · Complementario: Mismo gato sin retención urinaria
+ ✔ Prueba  9 · Complementario: Signo de alarma sin diagnóstico
+ ✔ Prueba 10 · Complementario: Datos del paciente no válidos
+
+ 10 de 10 pruebas aprobadas.

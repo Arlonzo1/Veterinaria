@@ -1,0 +1,29 @@
+==============================================================================
+ TriaVet · Script de pruebas por consola (Python + SWI-Prolog vía PySwip)
+ Ejecutado: 2026-10-21 11:56:18
+==============================================================================
+Base de conocimiento cargada: base_conocimiento.pl
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA 5 · Caso borde 2: Lista vacía sin errores en Python
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Con una lista vacía, Prolog debe responder con la cláusula por defecto (prioridad indeterminado y ningún diagnóstico) y Python debe mostrarlo sin lanzar excepciones.
+Entrada  : especie=gato, edad=24 meses, sexo=hembra
+           hallazgos=[]
+Consulta : ?- analizar_caso('gato', 24, 'hembra', [], Validos, Ignorados, Alarmas, Diagnosticos, Prioridad, Recomendacion).
+Esperado : diagnósticos = [(ninguno)]
+           prioridad = INDETERMINADO
+           alarmas = []
+Obtenido : diagnósticos = [(ninguno)] · prioridad = INDETERMINADO
+           Prioridad del caso : INDETERMINADO
+           Recomendación      : SIN HALLAZGOS VÁLIDOS: no es posible orientar el caso; revise los signos ingresados.
+           Hallazgos válidos  : (ninguno)
+           Diagnósticos       : (ninguno)
+Veredicto: ✔ PASÓ
+
+==============================================================================
+ RESUMEN
+==============================================================================
+ ✔ Prueba  5 · Caso borde 2: Lista vacía sin errores en Python
+
+ 1 de 1 pruebas aprobadas.

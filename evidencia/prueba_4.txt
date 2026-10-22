@@ -1,0 +1,32 @@
+==============================================================================
+ TriaVet · Script de pruebas por consola (Python + SWI-Prolog vía PySwip)
+ Ejecutado: 2026-10-21 11:55:44
+==============================================================================
+Base de conocimiento cargada: base_conocimiento.pl
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA 4 · Caso borde 1: Datos insuficientes / lista parcial
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : La lista cumple solo parte del perfil del moquillo (falta 'fiebre', requisito obligatorio verificado con contiene_todos/2) e incluye un hallazgo inexistente que particionar/3 debe ignorar. setof/3 no encuentra soluciones y se aplica el valor por defecto.
+Entrada  : especie=perro, edad=60 meses, sexo=hembra
+           hallazgos=['secrecion_nasal', 'tos', 'vacunacion_incompleta', 'estornudo_raro']
+Consulta : ?- analizar_caso('perro', 60, 'hembra', ['secrecion_nasal', 'tos', 'vacunacion_incompleta', 'estornudo_raro'], Validos, Ignorados, Alarmas, Diagnosticos, Prioridad, Recomendacion).
+Esperado : diagnósticos = [sin_diagnostico_concluyente]
+           prioridad = BAJO
+           no debe incluir: moquillo
+           ignorados = ['estornudo_raro']
+Obtenido : diagnósticos = [sin_diagnostico_concluyente] · prioridad = BAJO
+           Prioridad del caso : BAJO
+           Recomendación      : NO URGENTE: vigile al paciente en casa y consulte si los signos persisten o empeoran.
+           Hallazgos válidos  : secrecion nasal, tos, vacunacion incompleta
+           Hallazgos ignorados: estornudo_raro
+             1. Sin diagnóstico concluyente  [BAJO]  certeza 0 %
+                Indicación : Los hallazgos no permiten orientar un diagnóstico; observe la evolución y consulte si aparecen nuevos signos.
+Veredicto: ✔ PASÓ
+
+==============================================================================
+ RESUMEN
+==============================================================================
+ ✔ Prueba  4 · Caso borde 1: Datos insuficientes / lista parcial
+
+ 1 de 1 pruebas aprobadas.

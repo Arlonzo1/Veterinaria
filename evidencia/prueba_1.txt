@@ -1,0 +1,31 @@
+==============================================================================
+ TriaVet · Script de pruebas por consola (Python + SWI-Prolog vía PySwip)
+ Ejecutado: 2026-10-21 11:52:42
+==============================================================================
+Base de conocimiento cargada: base_conocimiento.pl
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA 1 · Caso normal 1: Diagnóstico único claro
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Comprobar el encadenamiento de 3 niveles: los signos activan el estado intermedio abdomen_agudo (Nivel 2), que junto con el perfil lleva a una única conclusión de severidad crítica (Nivel 3).
+Entrada  : especie=perro, edad=48 meses, sexo=macho
+           hallazgos=['raza_torax_profundo', 'abdomen_distendido', 'arcadas_improductivas', 'salivacion_excesiva', 'inquietud']
+Consulta : ?- analizar_caso('perro', 48, 'macho', ['raza_torax_profundo', 'abdomen_distendido', 'arcadas_improductivas', 'salivacion_excesiva', 'inquietud'], Validos, Ignorados, Alarmas, Diagnosticos, Prioridad, Recomendacion).
+Esperado : diagnósticos = [dilatacion_torsion_gastrica]
+           prioridad = CRÍTICO
+           severidades: dilatacion_torsion_gastrica=critico
+Obtenido : diagnósticos = [dilatacion_torsion_gastrica] · prioridad = CRÍTICO
+           Prioridad del caso : CRÍTICO
+           Recomendación      : URGENCIA VITAL: acuda de inmediato a un servicio veterinario de urgencias.
+           Hallazgos válidos  : abdomen distendido, arcadas improductivas, inquietud, raza torax profundo, salivacion excesiva
+             1. Dilatación-torsión gástrica  [CRÍTICO]  certeza 95 %
+                Sustento   : abdomen distendido, arcadas improductivas, salivacion excesiva, inquietud, raza torax profundo
+                Indicación : No le dé agua ni comida ni intente provocarle el vómito. Trasládelo de inmediato a urgencias.
+Veredicto: ✔ PASÓ
+
+==============================================================================
+ RESUMEN
+==============================================================================
+ ✔ Prueba  1 · Caso normal 1: Diagnóstico único claro
+
+ 1 de 1 pruebas aprobadas.

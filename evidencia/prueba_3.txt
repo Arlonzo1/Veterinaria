@@ -1,0 +1,33 @@
+==============================================================================
+ TriaVet · Script de pruebas por consola (Python + SWI-Prolog vía PySwip)
+ Ejecutado: 2026-10-21 11:55:08
+==============================================================================
+Base de conocimiento cargada: base_conocimiento.pl
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA 3 · Caso de exclusión: Negación por fallo (\+) y corte (!)
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Un cachorro con diarrea con sangre sería candidato a parvovirosis, pero la vacunación completa la descarta con \+. Queda la gastroenteritis aguda, cuya severidad base (bajo) sube a medio por ser cachorro: el corte en etapa_vida/3 y en severidad/3 elige una sola rama.
+Entrada  : especie=perro, edad=5 meses, sexo=macho
+           hallazgos=['vacunacion_completa', 'vomito', 'diarrea_con_sangre', 'anorexia']
+Consulta : ?- analizar_caso('perro', 5, 'macho', ['vacunacion_completa', 'vomito', 'diarrea_con_sangre', 'anorexia'], Validos, Ignorados, Alarmas, Diagnosticos, Prioridad, Recomendacion).
+Esperado : diagnósticos = [gastroenteritis_aguda]
+           prioridad = MEDIO
+           severidades: gastroenteritis_aguda=medio
+           no debe incluir: parvovirosis
+Obtenido : diagnósticos = [gastroenteritis_aguda] · prioridad = MEDIO
+           Prioridad del caso : MEDIO
+           Recomendación      : PRIORITARIO: programe una consulta veterinaria en las próximas 24 a 48 horas y vigile la evolución.
+           Hallazgos válidos  : anorexia, diarrea con sangre, vacunacion completa, vomito
+             1. Gastroenteritis aguda inespecífica  [MEDIO]  certeza 70 %
+                Sustento   : vomito, diarrea con sangre, anorexia
+                Agravantes : paciente vulnerable
+                Indicación : Ofrezca agua en pequeñas cantidades y vigile; consulte si los signos duran más de 24 horas o empeoran.
+Veredicto: ✔ PASÓ
+
+==============================================================================
+ RESUMEN
+==============================================================================
+ ✔ Prueba  3 · Caso de exclusión: Negación por fallo (\+) y corte (!)
+
+ 1 de 1 pruebas aprobadas.

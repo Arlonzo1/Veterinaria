@@ -1,0 +1,72 @@
+{
+    // Tareas de TriaVet: Terminal > Ejecutar tarea... (Terminal > Run Task...)
+    "version": "2.0.0",
+    "options": {
+        "env": { "PYTHONIOENCODING": "utf-8" }
+    },
+    "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true,
+        "focus": true,
+        "showReuseMessage": false
+    },
+    "tasks": [
+        {
+            "label": "TriaVet: Prueba 1 (caso normal 1)",
+            "type": "shell",
+            "command": "python pruebas.py 1",
+            "problemMatcher": []
+        },
+        {
+            "label": "TriaVet: Prueba 2 (caso normal 2)",
+            "type": "shell",
+            "command": "python pruebas.py 2",
+            "problemMatcher": []
+        },
+        {
+            "label": "TriaVet: Prueba 3 (caso de exclusión)",
+            "type": "shell",
+            "command": "python pruebas.py 3",
+            "problemMatcher": []
+        },
+        {
+            "label": "TriaVet: Prueba 4 (caso borde 1)",
+            "type": "shell",
+            "command": "python pruebas.py 4",
+            "problemMatcher": []
+        },
+        {
+            "label": "TriaVet: Prueba 5 (caso borde 2)",
+            "type": "shell",
+            "command": "python pruebas.py 5",
+            "problemMatcher": []
+        },
+        {
+            "label": "TriaVet: Todas las pruebas",
+            "type": "shell",
+            "command": "python pruebas.py",
+            "problemMatcher": [],
+            "group": { "kind": "test", "isDefault": true }
+        },
+        {
+            "label": "TriaVet: Consola interactiva",
+            "type": "shell",
+            "command": "python consola.py",
+            "problemMatcher": []
+        },
+        {
+            "label": "TriaVet: Interfaz web (Entregable 2)",
+            "type": "shell",
+            "command": "python -m streamlit run main.py",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "TriaVet: Pruebas del Entregable 2",
+            "type": "shell",
+            "command": "python pruebas_explicabilidad.py",
+            "problemMatcher": []
+        }
+    ]
+}

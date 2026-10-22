@@ -1,0 +1,168 @@
+==============================================================================
+ TriaVet · Pruebas del Entregable 2 (explicabilidad y recomendación)
+ Ejecutado: 2026-10-21 19:21:51
+==============================================================================
+Base de conocimiento cargada: base_conocimiento.pl
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E2-1 · ¿Por qué?: traza de una inferencia completa
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Cachorro sin vacunación completa con diarrea con sangre: la traza debe mostrar las reglas de los niveles 3, 2 y 1, las negaciones por fallo, los hechos comprobados y la justificación de la severidad y la certeza.
+  ?- explicar_caso('perro', 4, 'macho', ['vomito', 'diarrea_con_sangre', 'letargo', 'anorexia', 'vacunacion_incompleta'], Explicaciones).
+  Reglas disparadas (7):
+    Nivel 3: diagnostico_posible(Caso, parvovirosis)
+    Nivel 3: candidato(Caso, parvovirosis)
+    Nivel 2: cuadro_digestivo(Caso)
+    Nivel 2: susceptible_parvovirus(Caso)
+    Nivel 2: sin_proteccion_vacunal(Caso)
+    Nivel 1: etapa(Caso, cachorro)
+    Nivel 2: cumple_perfil(Caso, parvovirosis)
+  Hechos comprobados: ['anorexia', 'diarrea_con_sangre', 'letargo', 'vacunacion_incompleta', 'vomito']
+  Datos del paciente: [('especie', 'perro'), ('edad_meses', '4'), ('sexo', 'macho'), ('etapa', 'cachorro')]
+  Severidad: Nivel base: ALTO (severidad_base/2).
+  Severidad: Agravante: paciente vulnerable (cachorro, geriátrico, gestante o con enfermedad crónica); sube un nivel (subir_niveles/3).
+  Severidad: Nivel final: CRÍTICO.
+  Certeza: certeza_base 0.60 + 0.10 × 4 signo(s) de apoyo = 1.00; se aplica el tope de 0.95 → 95 %.
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E2-2 · ¿Por qué?: hipótesis alternativas descartadas
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : En el mismo caso, cada hipótesis que comparte hallazgos debe descartarse con su motivo: exclusión, condición excluyente (\+), dato del paciente o falta de evidencia.
+  ?- hipotesis_descartadas('perro', 4, 'macho', ['vomito', 'diarrea_con_sangre', 'letargo', 'anorexia', 'vacunacion_incompleta'], Descartadas).
+    Moquillo canino (distemper) [evidencia_insuficiente] comparte ['letargo', 'anorexia', 'vacunacion_incompleta']
+        Falta evidencia crítica: «Fiebre» (obligatorio); «Secreción nasal» (obligatorio).
+    Obstrucción uretral felina [dato_paciente] comparte ['letargo', 'vomito', 'anorexia']
+        No aplica a este paciente: la regla exige especie gato y el paciente es perro.
+    Enfermedad renal crónica [condicion_excluyente] comparte ['vomito', 'anorexia', 'letargo']
+        Descartada por una condición excluyente (\+): El paciente es cachorro.
+    Gastroenteritis aguda inespecífica [exclusion] comparte ['vomito', 'diarrea_con_sangre', 'anorexia']
+        Se descarta porque «Parvovirosis canina» también se cumple y la excluye (excluye/2): explica mejor los mismos hallazgos.
+    Intoxicación [evidencia_insuficiente] comparte ['vomito', 'letargo']
+        Falta evidencia crítica: al menos uno de: Ingesta de chocolate, Ingesta de xilitol, Ingesta de uvas o pasas, Ingesta de cebolla o ajo, Ingesta de ibuprofeno, Ingesta de paracetamol, Ingesta de lirio o Ingesta de raticida.
+    Golpe de calor [evidencia_insuficiente] comparte ['letargo', 'vomito']
+        Falta evidencia crítica: «Exposición al calor» (obligatorio); «Jadeo excesivo» (obligatorio).
+    Obstrucción intestinal por cuerpo extraño [evidencia_insuficiente] comparte ['anorexia', 'letargo']
+        Falta evidencia crítica: «Vómito persistente» (obligatorio).
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E2-3 · ¿Por qué?: refutación por negación (\+)
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Caso 3 del Entregable 1: la vacunación completa descarta la parvovirosis; el árbol de refutación debe mostrar la condición excluyente.
+  ?- hipotesis_descartadas('perro', 5, 'macho', ['vacunacion_completa', 'vomito', 'diarrea_con_sangre', 'anorexia'], Descartadas).
+    Parvovirosis canina [condicion_excluyente] Descartada por una condición excluyente (\+): Se reporta vacunación completa: el paciente está protegido.
+    [no_regla] candidato(Caso, parvovirosis) — Parvovirosis: cuadro digestivo en un perro susceptible que cumple el perfil
+        [no_regla] susceptible_parvovirus(Caso) — Susceptible a parvovirus: sin protección vacunal y cachorro o con esquema incompleto
+            [alternativa] Cláusula 1 — Esta cláusula tampoco se cumple
+                [no_regla] sin_proteccion_vacunal(Caso) — Sin protección vacunal: no se reporta vacunación completa
+                    [excluyente] \+ presente(vacunacion_completa, H) — Se reporta vacunación completa: el paciente está protegido
+                        [hallazgo] vacunacion_completa — Vacunación completa
+            [alternativa] Cláusula 2 — Esta cláusula tampoco se cumple
+                [no_regla] sin_proteccion_vacunal(Caso) — Sin protección vacunal: no se reporta vacunación completa
+                    [excluyente] \+ presente(vacunacion_completa, H) — Se reporta vacunación completa: el paciente está protegido
+                        [hallazgo] vacunacion_completa — Vacunación completa
+                [falta] vacunacion_incompleta — Falta «Vacunación incompleta o ausente»: hallazgo obligatorio no ingresado
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E2-4 · ¿Qué falta?: certeza baja y consulta de desempate
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Gato macho con esfuerzo para orinar: cistitis con certeza baja frente a obstrucción uretral parcial. pregunta_desempate/6 debe sugerir ausencia_de_orina.
+  ?- que_falta('gato', 36, 'macho', ['esfuerzo_para_orinar', 'vocalizacion_dolor'], [], Estado, Competidoras, Sugerencias).
+  Estado: certeza_baja (activo=True) Dictamen no definitivo: «Cistitis / infección urinaria baja» tiene una certeza de 75 %, por debajo del umbral de 80 %.
+    Compite: Cistitis / infección urinaria baja [confirmada] activación 100 % falta []
+    Compite: Obstrucción uretral felina [parcial] activación 67 % falta ['«No sale orina» (obligatorio)']
+  ?- pregunta_desempate('gato', 36, 'macho', ['esfuerzo_para_orinar', 'vocalizacion_dolor'], [], Pregunta).
+  Pregunta de mayor peso: ¿Al intentar orinar no sale orina o salen apenas unas gotas? (peso 24.1, desempata=True)
+    Si lo presenta: se concluiría Obstrucción uretral felina; se descartaría Cistitis / infección urinaria baja; la prioridad pasaría de MEDIO a CRÍTICO; el dictamen pasaría a ser definitivo.
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E2-5 · ¿Qué falta?: el usuario responde «sí»
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Al agregar el hallazgo sugerido se confirma la obstrucción uretral y el dictamen pasa a ser definitivo.
+  Respuesta del usuario: «Sí, lo presenta» (ausencia_de_orina)
+  Diagnósticos: ['obstruccion_uretral'] · prioridad CRÍTICO · estado definitivo
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E2-6 · ¿Qué falta?: el usuario responde «no»
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : La respuesta negativa refuta la hipótesis que lo exigía y no se vuelve a preguntar.
+  Respuesta del usuario: «No lo presenta» (ausencia_de_orina)
+  ?- que_falta('gato', 36, 'macho', ['esfuerzo_para_orinar', 'vocalizacion_dolor'], ['ausencia_de_orina'], Estado, Competidoras, Sugerencias).
+  Competidoras: {'cistitis': 'confirmada', 'obstruccion_uretral': 'refutada_usuario'}
+  Nueva pregunta: ¿Se lame con insistencia la zona genital?
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E2-7 · ¿Qué falta?: evidencia insuficiente
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Perro decaído que no come: ningún perfil se completa; varias hipótesis compiten y la pregunta de mayor peso es el vómito persistente.
+  ?- que_falta('perro', 48, 'hembra', ['letargo', 'anorexia'], [], Estado, Competidoras, Sugerencias).
+  Estado: insuficiente (activo=True) Evidencia insuficiente: ningún perfil diagnóstico se completa con los hallazgos ingresados.
+    Compite: Obstrucción intestinal por cuerpo extraño activación 67 % falta ['«Vómito persistente» (obligatorio)']
+    Compite: Parvovirosis canina activación 50 % falta ['«Diarrea con sangre» (obligatorio)', '«Vacunación incompleta o ausente» (obligatorio)']
+    Compite: Moquillo canino (distemper) activación 50 % falta ['«Fiebre» (obligatorio)', '«Secreción nasal» (obligatorio)']
+    Compite: Intoxicación activación 50 % falta ['al menos uno de: Ingesta de chocolate, Ingesta de xilitol, Ingesta de uvas o pasas, Ingesta de cebolla o ajo, Ingesta de ibuprofeno, Ingesta de paracetamol, Ingesta de lirio o Ingesta de raticida']
+    Compite: Enfermedad renal crónica activación 50 % falta ['«Bebe en exceso (polidipsia)» (obligatorio)', '«Orina en exceso (poliuria)» (obligatorio)']
+    Compite: Gastroenteritis aguda inespecífica activación 50 % falta ['al menos uno de: Vómito, Vómito persistente, Diarrea o Diarrea con sangre']
+    Compite: Golpe de calor activación 33 % falta ['«Exposición al calor» (obligatorio)', '«Jadeo excesivo» (obligatorio)']
+    1. ¿El vómito es repetido (más de 3 veces en el día) o no cede? (peso 22.6)
+    2. ¿Tiene fiebre (temperatura rectal mayor de 39.2 °C)? (peso 18.0)
+    3. ¿La vacunación está incompleta o nunca fue vacunado? (peso 18.0)
+    4. ¿La diarrea tiene sangre roja o es negra? (peso 15.0)
+    5. ¿Pudo haber ingerido alguna sustancia tóxica? Indique cuál. (peso 13.5)
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E2-8 · ¿Qué falta?: empate entre dos diagnósticos
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Golpe de calor e intoxicación por xilitol con la misma severidad y certeza: la primera pregunta debe separarlas y romper el empate.
+  ?- que_falta('perro', 48, 'macho', ['exposicion_calor', 'jadeo_excesivo', 'letargo', 'ingesta_xilitol'], [], Estado, Competidoras, Sugerencias).
+  Estado: empate (activo=True) Empate: «Golpe de calor» (75 %) y «Intoxicación» (75 %) tienen la misma severidad y sus certezas difieren en 5 puntos o menos.
+    1. ¿Se desplomó o no puede levantarse? (peso 12.0, desempata=True)
+       Si lo presenta: la certeza de Golpe de calor subiría de 75 % a 85 %; el dictamen pasaría a ser definitivo.
+    2. ¿Ha tenido convulsiones? (peso 12.0, desempata=True)
+       Si lo presenta: la certeza de Intoxicación subiría de 75 % a 85 %; el dictamen pasaría a ser definitivo.
+    3. ¿Tiene diarrea? (peso 12.0, desempata=True)
+       Si lo presenta: la certeza de Intoxicación subiría de 75 % a 85 %; el dictamen pasaría a ser definitivo.
+    4. ¿Respira con dificultad, con la boca abierta o con ruido? (peso 12.0, desempata=True)
+       Si lo presenta: la certeza de Golpe de calor subiría de 75 % a 85 %; el dictamen pasaría a ser definitivo.
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E2-9 · ¿Por qué?: alarma sin diagnóstico
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Convulsiones sin perfil completo: la explicación usa el valor por defecto de conclusiones/2 y la severidad se justifica por la alarma.
+  ?- explicar_caso('perro', 24, 'macho', ['convulsiones'], Explicaciones).
+  sin_diagnostico_concluyente: Ninguna regla candidato/2 se cumplió: setof/3 falló y se aplica el valor por defecto de conclusiones/2
+  Severidad: Signo de alarma presente (convulsiones): la primera cláusula de severidad/3 fija el nivel en CRÍTICO, sin importar el diagnóstico.
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E2-10 · Validación de entradas con ground/1
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Variables libres, listas abiertas o átomos con mayúscula deben rechazarse con la cláusula por defecto, sin errores en Python.
+  ?- explicar_caso(perro, 48, macho, [vomito, X], E).  ->  E = []
+  ?- hipotesis_descartadas(perro, 48, macho, _, D).  ->  D = []
+  ?- explicar_caso('Perro', 48, macho, [vomito], E).  ->  E = []
+  ?- que_falta(perro, Edad, macho, [vomito], [], Estado, C, S).  ->  Estado = ['datos_invalidos', 'no', 'DATOS DEL PACIENTE NO VÁLIDOS: revise la especie (perro/gato), la edad en meses (0-300) y el sexo (macho/hembra).']
+Veredicto: ✔ PASÓ
+
+==============================================================================
+ RESUMEN
+==============================================================================
+ ✔ Prueba E2-1 · ¿Por qué?: traza de una inferencia completa
+ ✔ Prueba E2-2 · ¿Por qué?: hipótesis alternativas descartadas
+ ✔ Prueba E2-3 · ¿Por qué?: refutación por negación (\+)
+ ✔ Prueba E2-4 · ¿Qué falta?: certeza baja y consulta de desempate
+ ✔ Prueba E2-5 · ¿Qué falta?: el usuario responde «sí»
+ ✔ Prueba E2-6 · ¿Qué falta?: el usuario responde «no»
+ ✔ Prueba E2-7 · ¿Qué falta?: evidencia insuficiente
+ ✔ Prueba E2-8 · ¿Qué falta?: empate entre dos diagnósticos
+ ✔ Prueba E2-9 · ¿Por qué?: alarma sin diagnóstico
+ ✔ Prueba E2-10 · Validación de entradas con ground/1
+
+ 10 de 10 pruebas aprobadas.

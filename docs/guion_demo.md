@@ -1,0 +1,14 @@
+# Guion de la demostración — Entregable 2 (3 a 5 minutos)
+
+**Preparación:** ejecute `streamlit run main.py` y deje abierta la página `http://localhost:8501`. Antes de grabar, pase una vez por cada caso para que el navegador ya haya cargado todo.
+
+| Tiempo | Quién | Acción en la interfaz | Qué decir |
+|---|---|---|---|
+| 0:00–0:30 | Integrante B | Mostrar la página vacía y la pestaña **🧾 Consultas Prolog**. | TriaVet es un sistema experto «caja blanca». Python (Streamlit) solo captura los datos y dibuja; cada consulta va a SWI-Prolog por PySwip, y aquí se ve el texto exacto de cada una. Prolog no usa `read/1` y valida la entrada con `ground/1`. |
+| 0:30–2:00 | Integrante B → A | **Caso 1:** elegir «Caso 1 · Inferencia completa» en la barra lateral. Mostrar **🩺 Dictamen** y luego **🔍 ¿Por qué?**. | El cachorro sin vacunación completa recibe el diagnóstico de parvovirosis con severidad CRÍTICA: nivel base alto, más un nivel por ser cachorro (se ve en «Cómo se calculó la severidad»). El árbol no se escribió a mano: el metaintérprete `demostrar/3` vuelve a probar la conclusión con `clause/2` y registra las reglas de los niveles 3, 2 y 1, las negaciones por fallo en amarillo y los hallazgos que unificaron en verde. Abajo están las **reglas disparadas** y los **hechos comprobados como verdaderos**. |
+| 2:00–2:40 | Integrante A | En «Hipótesis alternativas descartadas», abrir **Gastroenteritis** y **Enfermedad renal crónica**. | Las hipótesis que comparten síntomas también se explican. La gastroenteritis se descarta porque la parvovirosis la excluye. La enfermedad renal crónica se descarta por una condición excluyente: `\+ etapa_vida(perro, 4, cachorro)` falla porque el paciente es cachorro. Esto lo construye el metaintérprete de refutación `refutar/3`. |
+| 2:40–4:00 | Integrante A → B | **Caso 2:** elegir «Caso 2 · Desempate». Ir a **🧭 ¿Qué falta?**. | Con solo dos signos, la cistitis queda con 75 % de certeza, por debajo del umbral de 80 %, así que Prolog activa el módulo de recomendación. Compite con la obstrucción uretral, que es parcial pero crítica. `pregunta_desempate/6` calcula el peso de cada pregunta (rol × gravedad × activación, multiplicado si desempata) y sugiere preguntar si sale orina. La simulación dice qué pasaría si la respuesta es «sí». |
+| 4:00–4:40 | Integrante B | Pulsar **✅ Sí, lo presenta**. Luego cargar otra vez el Caso 2 y pulsar **❌ No lo presenta**. | Con «sí», Prolog concluye la obstrucción uretral, descarta la cistitis y la prioridad pasa a CRÍTICO. Con «no», la obstrucción queda refutada y el sistema propone la siguiente pregunta. |
+| 4:40–5:00 | Ambos | (Opcional) «Caso 2c · Empate». | En un empate, Prolog solo pondera las dos hipótesis empatadas y propone signos que las separan. |
+
+**Atajos:** `?caso=1&panel=porque` y `?caso=2&panel=quefalta` al final de la dirección abren directamente cada parte de la demostración.
