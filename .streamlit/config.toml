@@ -8,4 +8,10 @@ gatherUsageStats = false
 port = 8501
 
 [theme]
+# Tema claro fijo: las tarjetas de la interfaz usan colores propios.
+base = "light"
 primaryColor = "#0f766e"
+backgroundColor = "#f8fafc"
+secondaryBackgroundColor = "#eef6f5"
+textColor = "#0f172a"
+font = "sans serif"

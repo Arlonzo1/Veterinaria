@@ -362,3 +362,84 @@ Para explicar por qué **no** se concluyó una hipótesis, un segundo metaintér
 | Negación por fallo (`\+`) | `demostrar/3` (registra `negacion`), `independientes/2`, `simplificar/2`, `pregunta_candidata/4`, `reparable/1` vía `fallo_bloqueante/2` | Siempre sobre términos instanciados: la meta negada ya está ligada al caso. |
 | Recolección (`findall/3`, `sort/4`, `list_to_set/2`) | `reglas_disparadas/3`, `hechos_verificados/2`, `hipotesis_en_competencia/3`, `sugerencias/5`, `hipotesis_descartadas/5` | Listas sin duplicados y ordenadas por activación o por peso. |
 | Validación con `ground/1` | `entrada_segura/4`, `atomos_seguros/2` | Ninguna variable libre enviada desde Python llega a las reglas. |
+
+---
+
+> **Actualización del Entregable 3.** Las secciones 15 a 17 documentan:
+>
+> - la **gramática DCG** de entrada en lenguaje natural (Sección 11 del `.pl`);
+> - la **adquisición dinámica de conocimiento** del Modo Experto (Sección 12);
+> - los cambios que permiten que lo aprendido se use y persista.
+>
+> Un no terminal DCG se escribe `nombre//N`. Prolog lo traduce a un predicado con dos argumentos más: la lista de palabras de entrada y la que queda.
+
+## 15. Lenguaje natural con DCG (Sección 11)
+
+| Firma | Modo de instanciación | Descripción funcional |
+|---|---|---|
+| `interpretar_texto/10` | `(+Texto, -Especie, -Edad, -Sexo, -Hallazgos, -Negados, -Mediciones, -Desconocidas, -Fragmentos, -Resumen)` *det* | **API para Python** (`MotorTriaVet.interpretar()`). Valida el texto con `ground/1`, lo divide en palabras y lo analiza con `descripcion//1`. Devuelve: especie, edad en meses y sexo (o `no_indicado`); hallazgos afirmados; hallazgos negados que no se afirmaron; mediciones `[Variable, Valor]`; palabras desconocidas; fragmentos `[Tipo, Valor, Texto]` para resaltar la oración, y la oración de confirmación generada por `resumen//5`. Con corte y valor por defecto: sin texto válido devuelve un análisis vacío. |
+| `texto_a_palabras/2` | `(+Texto, -Palabras)` *det* | Minúsculas, sin tildes ni signos; los números quedan como números y el `*` se conserva (marca de raíz del léxico). |
+| `normalizar_caracter/2`, `sin_tilde/2`, `palabra_token/2` | *det* / *semidet* | Normalización carácter a carácter y conversión de cada palabra: quita puntos sobrantes y falla con las vacías, que `convlist/3` descarta. |
+| `descripcion//1` | `(-Fragmentos)` | **Gramática principal.** Una lista de fragmentos `f(Tipo, Valor, Palabras)`. Con corte: análisis voraz, se queda con el primer fragmento que encaja en cada posición. |
+| `fragmento_con_palabras//1` | `(-Fragmento)` | Envuelve `fragmento//2` y guarda las palabras que consumió (la diferencia entre la entrada y el resto). |
+| `fragmento//2` | `(-Tipo, -Valor)` | Prueba en orden: `medicion`, `edad`, `hallazgo`, `paciente`, `sexo`, `negado`, `vacia` y, por defecto, `desconocida`. |
+| `expresion_larga//1` | `(-Hallazgo)` | No terminal escrito a mano: prueba todos los patrones del léxico al comienzo de la entrada y se queda con el **más largo** («no come» gana a la negación de «come»). |
+| `negacion//1`, `relleno_negacion//0`, `lista_negada//1`, `resto_negado//1` | `(-Hallazgos)` | «no tiene fiebre ni tos», «sin vómito»: un negador, palabras de relleno y una lista de expresiones unidas por «ni» u «o». La «y» no prolonga la negación. |
+| `paciente//2`, `sexo//1` | `(-Especie, -Sexo)` / `(-Sexo)` | «mi perrita» → perro, hembra; «es macho» → macho. |
+| `edad//1`, `numero//1` | `(-Meses)` / `(-N)` | «de 4 meses», «dos años», «una semana». Los números pueden ir en cifras o en palabras. |
+| `medicion//2`, `relleno_corto//0`, `opcional_segundos//0` | `(-Variable, -Valor)` | «temperatura de 40.2», «40 grados», «vomitó 5 veces», «llenado capilar de 3 segundos», «3 días sin defecar». |
+| `resumen//5` | `(+Especie, +Edad, +Sexo, +Hallazgos, +Negados)` | **DCG en sentido inverso:** genera «Entendí que se trata de un perro de 4 meses que presenta…, y que no presenta… ni…». |
+| `sujeto//3`, `sexo_texto//1`, `edad_texto//1`, `presenta//1`, `no_presenta//2`, `enumeracion_hallazgos//2`, `enumeracion//2` | — | Partes de la oración generada. La enumeración usa «y» para lo que presenta y «ni» para lo que no. |
+| `oracion/2` | `(+Palabras, -Texto)` *det* | Une las palabras generadas y pega las comas y el punto. |
+| `primer_valor/3` | `(+Fragmentos, +Dato, -Valor)` *det* | Primera especie, sexo o edad mencionados; la raza también revela la especie (`raza_especie/2`). Con corte y valor por defecto `no_indicado`. |
+| `exportar_fragmento/2` | `(+Fragmento, -Lista)` *det* | Convierte `f(Tipo, Valor, Palabras)` en `[Tipo, Valor, Texto]` para Python. |
+| `compilar_lexico/0` | *det* | Convierte cada expresión del léxico en un patrón (`patron_lexico/2`). Se ejecuta al cargar el archivo (`initialization/1`) y cada vez que el Modo Experto enseña una expresión. |
+| `expresion_del_lexico/2` | `(?Texto, ?Hallazgo)` *nondet* | Léxico original más las expresiones aprendidas cuyo hallazgo existe. |
+| `compilar_patron/2`, `elemento_patron/2` | `(+Texto, -Patron)` *det* | Una palabra terminada en `*` se convierte en `prefijo(Raiz)`. |
+| `coincide/2`, `coincide_secuencia/3`, `coincide_texto/2` | *semidet* | Comparan una palabra o una secuencia de palabras con un patrón. |
+
+| Hecho | Cantidad | Contenido |
+|---|---:|---|
+| `expresion/2` | ≈ 300 | Cómo suele decir el tutor cada hallazgo (con raíces `*`). |
+| `palabra_paciente/3`, `palabra_sexo/2`, `raza_especie/2` | 16, 7, 11 | Especie, sexo y raza. |
+| `palabra_numero/2`, `unidad_edad/2` | 15, 5 | Números escritos con palabras y unidades de edad en meses. |
+| `negador/1`, `relleno_negacion/1`, `palabra_vacia/1` | 5, 18, regla | Palabras que niegan, rellenos de la negación y palabras sin contenido. |
+| `patron_lexico/2` (dinámico) | — | Léxico compilado. |
+
+## 16. Adquisición dinámica de conocimiento: Modo Experto (Sección 12)
+
+| Firma | Modo de instanciación | Descripción funcional |
+|---|---|---|
+| `aprender_diagnostico/3` | `(+Datos, -Estado, -Mensajes)` *det* | **API para Python** (`MotorTriaVet.aprender_diagnostico()`). `Datos = diagnostico(Id, Nombre, Especies, Curso, Requisitos, Apoyo, Minimo, Severidad, CertezaPct, Indicacion, Excluye, ExcluidoPor, Autor)`. Si `errores_diagnostico/2` no encuentra problemas, inyecta cada cláusula con **`assertz/1`** y llama a `persistir_conocimiento/0`. `Estado = ok \| error`. Con corte: con errores no toca la memoria ni el archivo. |
+| `vista_previa_diagnostico/3` | `(+Datos, -Errores, -Texto)` *det* | **API para Python.** Valida y devuelve las cláusulas que se escribirían, sin modificar nada. |
+| `aprender_hallazgo/3` | `(+Datos, -Estado, -Mensajes)` *det* | **API para Python.** `Datos = hallazgo(Id, Nombre, Grupo, Pregunta, Expresiones, Autor)`. Agrega `signo/2` o `antecedente/2`, `nombre_hallazgo/2`, `pregunta/2` y las expresiones de la DCG; recompila el léxico y persiste. |
+| `aprender_expresion/5` | `(+Texto, +Hallazgo, +Autor, -Estado, -Mensajes)` *det* | **API para Python.** Enseña a la DCG un sinónimo de un hallazgo existente. |
+| `olvidar/4` | `(+Tipo, +Id, -Estado, -Mensajes)` *det* | **API para Python.** `Tipo = diagnostico \| hallazgo \| expresion`. Retira lo aprendido con **`retract/1`** y persiste. No olvida un hallazgo que use un diagnóstico ni el conocimiento original: en esos casos responde con un mensaje de error (valor por defecto). |
+| `conocimiento_aprendido/3` | `(-Diagnosticos, -Hallazgos, -Expresiones)` *det* | **API para Python.** Lista lo aprendido con su autor y fecha. |
+| `texto_aprendido/1` | `(-Texto)` *det* | **API para Python.** Lo aprendido que está en memoria, en sintaxis Prolog, para compararlo con el archivo. |
+| `persistir_conocimiento/0` | *det* | **Escritura persistente.** Copia el archivo a `base_conocimiento.pl.bak`, conserva todo hasta la marca de la Sección 13 (`lineas_hasta_marca/3`) y debajo escribe lo aprendido con `portray_clause/2`, con finales de línea LF. |
+| `escribir_aprendido/1`, `expresion_suelta/1` | `(+Salida)` *det* | Escribe hallazgos, expresiones y diagnósticos aprendidos, con un comentario de autor y fecha por cada uno. |
+| `lineas_hasta_marca/3`, `marca_aprendizaje/1` | *semidet* / *det* | Lectura línea a línea hasta la marca. La marca se arma por partes para que su texto solo exista una vez en el archivo. |
+| `clausula_de_diagnostico/2`, `clausula_de_hallazgo/2` | `(+Id, -Clausula)` *nondet* | Todas las cláusulas que pertenecen a lo aprendido (para persistir u olvidar). |
+| `clausulas_diagnostico/3`, `texto_clausulas/2`, `fecha_actual/1` | *det* | Construyen los hechos del diagnóstico y su texto. |
+| `errores_diagnostico/2`, `error_diagnostico/2`, `error_hallazgo/2`, `error_expresion/4` | *det* / *nondet* | **Validación en Prolog:** `ground/1`; identificador nuevo en minúscula (`identificador_valido/1`); hallazgos existentes; obligatorios y de apoyo sin repetirse; mínimo coherente; perfil que exija evidencia; severidad y certeza válidas; diagnósticos de exclusión existentes; autor. |
+| `identificador_valido/1`, `texto_no_vacio/1`, `sistema_organico/1`, `usado_por/2` | *semidet* | Comprobaciones auxiliares. |
+
+| Hecho dinámico (`assertz`/`retract`) | Contenido |
+|---|---|
+| `diagnostico_aprendido(Id, Autor, Fecha)` | Registro de un diagnóstico aprendido. |
+| `hallazgo_aprendido(Id, Autor, Fecha)` | Registro de un hallazgo aprendido. |
+| `expresion_aprendida(Texto, Hallazgo, Autor, Fecha)` | Expresión aprendida para la DCG. |
+| `archivo_base(Ruta)` | Ruta del `.pl`; la fija una directiva al cargarlo. |
+
+## 17. Cambios en las secciones anteriores para el aprendizaje en caliente
+
+| Cambio | Dónde | Para qué |
+|---|---|---|
+| `:- dynamic` y `:- discontiguous` | Cabecera del `.pl`: `signo/2`, `antecedente/2`, `nombre_hallazgo/2`, `pregunta/2`, `nombre_diagnostico/2`, `especie_afectada/2`, `curso/2`, `requisito/2`, `apoyo/2`, `minimo_apoyo/2`, `certeza_base/2`, `severidad_base/2`, `indicacion/2`, `excluye/2` | Admiten `assertz/1` y `retract/1`, y sus cláusulas aprendidas pueden estar al final del archivo. |
+| Cláusula genérica `candidato(Caso, D) :- diagnostico_aprendido(D, _, _), cumple_perfil(Caso, D)` | Sección 5 | Concluye cualquier diagnóstico aprendido sin escribir una regla nueva. |
+| Regla en `regla_explicable/3` para los diagnósticos aprendidos | Sección 8.1 | La traza «¿Por qué?» la muestra como «regla aprendida en Modo Experto (autor)». |
+| `clausula_ajena/1` en `refutar_clausulas/3` | Sección 8.3 | La cláusula genérica no aparece como alternativa en la refutación de los diagnósticos originales. |
+| Hallazgo `hipotermia` (signo, nombre, pregunta e indicador de perfusión deficiente) | Secciones 1 y 9 | Destino de la temperatura baja del preprocesamiento numérico. |
+
+**Preprocesamiento numérico (Python, `preprocesamiento.py`).** No es un predicado. `Discretizador.clasificar(variable, valor, especie)` entrena un `DecisionTreeClassifier` por variable y especie con valores de referencia. Devuelve la categoría y el hecho de Prolog correspondiente: `fiebre`, `hipotermia`, `llenado_capilar_lento`, `vomito`, `vomito_persistente`, `sin_defecar` o `perdida_de_peso`.

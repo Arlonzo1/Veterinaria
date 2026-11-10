@@ -24,6 +24,15 @@ Predicados de Prolog invocados (ver docs/diccionario_predicados.md):
   pregunta_desempate/6     -> MotorTriaVet.pregunta_desempate()  "¿Qué falta?"
   nombre_hallazgo/2        -> MotorTriaVet.nombres_hallazgos()
   especie_paciente/2, sexo_paciente/2 -> MotorTriaVet.opciones_paciente()
+  Entregable 3:
+  interpretar_texto/10     -> MotorTriaVet.interpretar()          lenguaje natural (DCG)
+  vista_previa_diagnostico/3 -> MotorTriaVet.vista_previa_diagnostico()  Modo Experto
+  aprender_diagnostico/3   -> MotorTriaVet.aprender_diagnostico()  assertz + .pl
+  aprender_hallazgo/3      -> MotorTriaVet.aprender_hallazgo()     assertz + .pl
+  aprender_expresion/5     -> MotorTriaVet.aprender_expresion()    assertz + .pl
+  olvidar/4                -> MotorTriaVet.olvidar()               retract + .pl
+  conocimiento_aprendido/3 -> MotorTriaVet.conocimiento_aprendido()
+  texto_aprendido/1        -> MotorTriaVet.texto_aprendido()
 """
 
 from __future__ import annotations
@@ -204,6 +213,58 @@ class Recomendacion:
     sugerencias: list[Sugerencia]
 
 
+# -- Entregable 3: lenguaje natural y Modo Experto --------------------------
+
+@dataclass
+class Fragmento:
+    """Trozo de la oración reconocido por la DCG.
+
+    tipo: hallazgo | negado | paciente | sexo | edad | medicion | vacia | desconocida
+    """
+
+    tipo: str
+    valor: object
+    texto: str
+
+
+@dataclass
+class Interpretacion:
+    """Respuesta de interpretar_texto/10 (gramática DCG de la Sección 11)."""
+
+    consulta: str
+    especie: str | None
+    edad: int | None
+    sexo: str | None
+    hallazgos: list[str]
+    negados: list[str]
+    mediciones: list[tuple[str, float]]
+    desconocidas: list[str]
+    fragmentos: list[Fragmento]
+    resumen: str
+
+
+@dataclass
+class DiagnosticoAprendido:
+    id: str
+    nombre: str
+    autor: str
+    fecha: str
+    requisitos: list[str]
+    apoyo: list[str]
+    minimo: int
+    severidad: str
+    especies: list[str]
+
+
+@dataclass
+class ResultadoAprendizaje:
+    """Respuesta de los predicados del Modo Experto: ok | error y mensajes."""
+
+    consulta: str
+    ok: bool
+    mensajes: list[str]
+
+
 # ---------------------------------------------------------------------------
 # Conversión de valores de Python a términos de Prolog
 # ---------------------------------------------------------------------------
@@ -240,6 +301,28 @@ def termino_edad(valor: object) -> str:
 def termino_lista(valores: Iterable[object]) -> str:
     """Convierte una secuencia de Python en una lista de átomos de Prolog."""
     return "[" + ", ".join(termino_atomo(v) for v in valores) + "]"
+
+
+def termino_texto(valor: object, maximo: int = 1500) -> str:
+    """Texto libre (oración, nombre, indicación) como átomo entre comillas.
+
+    A diferencia de termino_atomo/1 conserva tildes, espacios y signos: solo
+    escapa la barra y la comilla simple, une las líneas y limita el largo.
+    Interpretar el texto le corresponde a Prolog.
+    """
+    texto = " ".join(str(valor).split())[:maximo]
+    texto = texto.replace("\\", "\\\\").replace("'", "\\'")
+    return f"'{texto}'"
+
+
+def termino_lista_textos(valores: Iterable[object]) -> str:
+    return "[" + ", ".join(termino_texto(v, 200) for v in valores) + "]"
+
+
+def termino_entero(valor: object) -> str:
+    """Entero como texto; cualquier otra cosa viaja como átomo y Prolog la rechaza."""
+    texto = str(valor).strip()
+    return texto if re.fullmatch(r"-?\d+", texto) else termino_atomo(texto)
 
 
 # ---------------------------------------------------------------------------
@@ -536,6 +619,135 @@ class MotorTriaVet:
         especies = {_texto(s["E"]): _texto(s["N"]) for s in self.consultar("especie_paciente(E, N)")}
         sexos = {_texto(s["S"]): _texto(s["N"]) for s in self.consultar("sexo_paciente(S, N)")}
         return especies, sexos
+
+    def nombres_diagnosticos(self) -> dict[str, str]:
+        """Diagnósticos del catálogo, incluidos los aprendidos (para el Modo Experto)."""
+        return {
+            _texto(s["D"]): _texto(s["N"])
+            for s in self.consultar("diagnostico_del_catalogo(D), nombre_diagnostico(D, N)")
+        }
+
+    # -- API del Entregable 3: lenguaje natural (DCG) ------------------------
+
+    @staticmethod
+    def consulta_interpretar(texto: str) -> str:
+        return (
+            f"interpretar_texto({termino_texto(texto)}, Especie, Edad, Sexo, Hallazgos, "
+            "Negados, Mediciones, Desconocidas, Fragmentos, Resumen)"
+        )
+
+    def interpretar(self, texto: str) -> Interpretacion:
+        """Analiza una oración en lenguaje natural con la DCG (interpretar_texto/10).
+
+        Python solo limpia el formato: une las líneas y escribe con punto los
+        decimales ("40,2" -> "40.2") para que la coma siga separando frases.
+        """
+        limpio = re.sub(r"(\d),(\d)", r"\1.\2", texto)
+        consulta = self.consulta_interpretar(limpio)
+        soluciones = self.consultar(consulta, max_resultados=1)
+        if not soluciones:
+            raise ErrorMotor("Prolog no devolvió respuesta para interpretar_texto/10.")
+        s = soluciones[0]
+
+        def opcional(valor):
+            v = _texto(valor)
+            return None if v == "no_indicado" else v
+
+        edad = s["Edad"]
+        return Interpretacion(
+            consulta=consulta,
+            especie=opcional(s["Especie"]),
+            edad=int(edad) if isinstance(edad, (int, float)) else None,
+            sexo=opcional(s["Sexo"]),
+            hallazgos=_lista_textos(s["Hallazgos"]),
+            negados=_lista_textos(s["Negados"]),
+            mediciones=[(_texto(v), float(x)) for v, x in s["Mediciones"]],
+            desconocidas=_lista_textos(s["Desconocidas"]),
+            fragmentos=[
+                Fragmento(_texto(t), v if isinstance(v, (int, float, list)) else _texto(v), _texto(x))
+                for t, v, x in s["Fragmentos"]
+            ],
+            resumen=_texto(s["Resumen"]),
+        )
+
+    # -- API del Entregable 3: Modo Experto ----------------------------------
+
+    @staticmethod
+    def termino_diagnostico(d: dict) -> str:
+        """diagnostico(Id, Nombre, Especies, Curso, Requisitos, Apoyo, Minimo,
+        Severidad, CertezaPct, Indicacion, Excluye, ExcluidoPor, Autor)"""
+        return (
+            f"diagnostico({termino_atomo(d['id'])}, {termino_texto(d['nombre'], 120)}, "
+            f"{termino_lista(d['especies'])}, {termino_atomo(d['curso'])}, "
+            f"{termino_lista(d['requisitos'])}, {termino_lista(d['apoyo'])}, "
+            f"{termino_entero(d['minimo'])}, {termino_atomo(d['severidad'])}, "
+            f"{termino_entero(d['certeza'])}, {termino_texto(d['indicacion'], 400)}, "
+            f"{termino_lista(d['excluye'])}, {termino_lista(d['excluido_por'])}, "
+            f"{termino_texto(d['autor'], 80)})"
+        )
+
+    def _aprendizaje(self, consulta: str) -> ResultadoAprendizaje:
+        soluciones = self.consultar(consulta, max_resultados=1)
+        if not soluciones:
+            raise ErrorMotor(f"Prolog no respondió a «{consulta}».")
+        s = soluciones[0]
+        return ResultadoAprendizaje(consulta, _texto(s["Estado"]) == "ok", _lista_textos(s["Mensajes"]))
+
+    def vista_previa_diagnostico(self, datos: dict) -> tuple[list[str], str]:
+        """Errores de validación y cláusulas que se escribirían (sin aprender)."""
+        consulta = f"vista_previa_diagnostico({self.termino_diagnostico(datos)}, Errores, Texto)"
+        s = self.consultar(consulta, max_resultados=1)[0]
+        return _lista_textos(s["Errores"]), _texto(s["Texto"])
+
+    def aprender_diagnostico(self, datos: dict) -> ResultadoAprendizaje:
+        """Valida, inyecta con assertz/1 y escribe en el .pl un diagnóstico nuevo."""
+        return self._aprendizaje(
+            f"aprender_diagnostico({self.termino_diagnostico(datos)}, Estado, Mensajes)"
+        )
+
+    def aprender_hallazgo(self, id_, nombre, grupo, pregunta, expresiones, autor) -> ResultadoAprendizaje:
+        """Agrega un signo o antecedente nuevo y las expresiones que lo reconocen."""
+        termino = (
+            f"hallazgo({termino_atomo(id_)}, {termino_texto(nombre, 120)}, {termino_atomo(grupo)}, "
+            f"{termino_texto(pregunta, 300)}, {termino_lista_textos(expresiones)}, "
+            f"{termino_texto(autor, 80)})"
+        )
+        return self._aprendizaje(f"aprender_hallazgo({termino}, Estado, Mensajes)")
+
+    def aprender_expresion(self, texto, hallazgo, autor) -> ResultadoAprendizaje:
+        """Enseña a la DCG una forma nueva de decir un hallazgo existente."""
+        return self._aprendizaje(
+            f"aprender_expresion({termino_texto(texto, 200)}, {termino_atomo(hallazgo)}, "
+            f"{termino_texto(autor, 80)}, Estado, Mensajes)"
+        )
+
+    def olvidar(self, tipo: str, id_: str) -> ResultadoAprendizaje:
+        """Retira de la memoria y del .pl algo aprendido (tipo: diagnostico | hallazgo | expresion)."""
+        clave = termino_texto(id_, 200) if tipo == "expresion" else termino_atomo(id_)
+        return self._aprendizaje(f"olvidar({termino_atomo(tipo)}, {clave}, Estado, Mensajes)")
+
+    def conocimiento_aprendido(self):
+        """(diagnosticos, hallazgos, expresiones) aprendidos en Modo Experto."""
+        s = self.consultar("conocimiento_aprendido(D, H, E)", max_resultados=1)[0]
+        diagnosticos = [
+            DiagnosticoAprendido(_texto(i), _texto(n), _texto(a), _texto(f), _lista_textos(r),
+                                 _lista_textos(ap), int(m), _texto(sev), _lista_textos(es))
+            for i, n, a, f, r, ap, m, sev, es in s["D"]
+        ]
+        hallazgos = [tuple(_texto(x) for x in fila) for fila in s["H"]]
+        expresiones = [tuple(_texto(x) for x in fila) for fila in s["E"]]
+        return diagnosticos, hallazgos, expresiones
+
+    def texto_aprendido(self) -> str:
+        """Lo aprendido en memoria, en sintaxis Prolog (texto_aprendido/1)."""
+        s = self.consultar("texto_aprendido(T)", max_resultados=1)
+        return _texto(s[0]["T"]) if s else ""
+
+    def seccion_aprendida_en_archivo(self) -> str:
+        """Lo que hay HOY en la Sección 13 del archivo .pl (para comprobar la persistencia)."""
+        contenido = self.ruta_base.read_text(encoding="utf-8")
+        marca = "%% >>> CONOCIMIENTO APRENDIDO EN CALIENTE >>>"
+        return contenido.split(marca, 1)[1].strip() if marca in contenido else ""
 
 
 # ---------------------------------------------------------------------------

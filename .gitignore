@@ -13,3 +13,10 @@ __pycache__/
 *.swo
 Thumbs.db
 Desktop.ini
+
+# Respaldo que escribe el Modo Experto antes de modificar el .pl
+*.bak
+
+# Configuración local de herramientas
+.claude/
+*.zip
