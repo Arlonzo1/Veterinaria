@@ -17,6 +17,10 @@
       Sección 8. Módulo de explicabilidad "¿Por qué?"     (Entregable 2)
       Sección 9. Módulo de recomendación "¿Qué falta?"    (Entregable 2)
       Sección 10. API para Python del Entregable 2
+      Sección 11. Lenguaje natural con DCG                (Entregable 3)
+      Sección 12. Adquisición dinámica de conocimiento    (Entregable 3)
+      Sección 13. Conocimiento aprendido en caliente      (lo escribe el
+                  Modo Experto; se conserva al reiniciar la aplicación)
 
     REPRESENTACIÓN DE UN CASO
       caso(Especie, EdadMeses, Sexo, Hallazgos)
@@ -51,6 +55,31 @@
     =========================================================================== */
 
 :- encoding(utf8).
+
+/*  ---------------------------------------------------------------------------
+    PREDICADOS AMPLIABLES EN CALIENTE (Entregable 3)
+    El Modo Experto agrega cláusulas a estos predicados con assertz/1 y las
+    escribe en la Sección 13 de este mismo archivo. Por eso son dinámicos
+    (admiten assertz/retract) y discontiguos (sus cláusulas aprendidas quedan
+    al final del archivo, separadas de las originales).
+    --------------------------------------------------------------------------- */
+:- dynamic
+    signo/2, antecedente/2, nombre_hallazgo/2, pregunta/2,
+    nombre_diagnostico/2, especie_afectada/2, curso/2,
+    requisito/2, apoyo/2, minimo_apoyo/2, certeza_base/2,
+    severidad_base/2, indicacion/2, excluye/2,
+    diagnostico_aprendido/3, hallazgo_aprendido/3, expresion_aprendida/4.
+:- discontiguous
+    signo/2, antecedente/2, nombre_hallazgo/2, pregunta/2,
+    nombre_diagnostico/2, especie_afectada/2, curso/2,
+    requisito/2, apoyo/2, minimo_apoyo/2, certeza_base/2,
+    severidad_base/2, indicacion/2, excluye/2.
+
+%   Ruta de este archivo: la usa la Sección 12 para escribir lo aprendido.
+:- dynamic archivo_base/1.
+:- prolog_load_context(source, Archivo),
+   retractall(archivo_base(_)),
+   assertz(archivo_base(Archivo)).
 
 
 /*  ===========================================================================
@@ -114,6 +143,7 @@ signo(ojos_hundidos,          general).
 signo(piel_sin_elasticidad,   general).
 signo(inquietud,              general).
 signo(vocalizacion_dolor,     general).
+signo(hipotermia,             general).
 
 /* ---------------------------------------------------------------------------
    1.3 Antecedentes y factores de riesgo del paciente
@@ -168,7 +198,7 @@ indicadores(deshidratacion,           [vomito_persistente, diarrea, diarrea_con_
                                        ojos_hundidos, piel_sin_elasticidad]).
 indicadores(compromiso_neurologico,   [convulsiones, temblores, desorientacion, mioclonias]).
 indicadores(depresion_estado_general, [letargo, colapso]).
-indicadores(perfusion_deficiente,     [encias_palidas, llenado_capilar_lento]).
+indicadores(perfusion_deficiente,     [encias_palidas, llenado_capilar_lento, hipotermia]).
 indicadores(condicion_vulnerable,     [gestante, enfermedad_cronica_previa]).
 
 /* ---------------------------------------------------------------------------
@@ -453,6 +483,7 @@ nombre_hallazgo(ojos_hundidos,             'Ojos hundidos').
 nombre_hallazgo(piel_sin_elasticidad,      'Piel sin elasticidad').
 nombre_hallazgo(inquietud,                 'Inquietud').
 nombre_hallazgo(vocalizacion_dolor,        'Se queja de dolor').
+nombre_hallazgo(hipotermia,                'Temperatura baja (hipotermia)').
 % Antecedentes
 nombre_hallazgo(vacunacion_completa,       'Vacunación completa').
 nombre_hallazgo(vacunacion_incompleta,     'Vacunación incompleta o ausente').
@@ -820,6 +851,14 @@ candidato(Caso, gastroenteritis_aguda) :-
     \+ signo_de_alarma(Caso),
     cumple_perfil(Caso, gastroenteritis_aguda).
 
+% Diagnósticos aprendidos en el Modo Experto (Entregable 3): se concluyen
+% cuando el caso cumple el perfil que definió el experto. El hecho
+% diagnostico_aprendido/3 va primero para que esta cláusula no se aplique a
+% los diagnósticos originales del catálogo.
+candidato(Caso, Diagnostico) :-
+    diagnostico_aprendido(Diagnostico, _, _),
+    cumple_perfil(Caso, Diagnostico).
+
 %!  excluido(+Caso, +Diagnostico) is semidet.
 %   Un diagnóstico se excluye si otro diagnóstico dominante es candidato.
 %   CORTE: basta con encontrar una exclusión.
@@ -1124,6 +1163,12 @@ regla_explicable(candidato(_, enfermedad_renal_cronica), 3,
     'Enfermedad renal crónica: poliuria y polidipsia en un paciente que no es cachorro').
 regla_explicable(candidato(_, gastroenteritis_aguda), 3,
     'Gastroenteritis aguda: cuadro digestivo sin signos de alarma').
+regla_explicable(candidato(_, Diagnostico), 3, Descripcion) :-
+    diagnostico_aprendido(Diagnostico, Autor, _),
+    nombre_diagnostico(Diagnostico, Nombre),
+    format(atom(Descripcion),
+           '~w: regla aprendida en Modo Experto (~w); el caso cumple su perfil',
+           [Nombre, Autor]).
 regla_explicable(candidato(_, _), 3,
     'Hipótesis diagnóstica').
 regla_explicable(excluido(_, _), 3,
@@ -1391,8 +1436,15 @@ independientes(MetaA, MetaB) :-
 %   Una lista de fallos por cada cláusula cuya cabeza unifica con Meta: la
 %   regla falló porque fallaron todas.
 refutar_clausulas(Caso, Meta, Alternativas) :-
-    findall(Cuerpo, clause(Meta, Cuerpo), Cuerpos),
+    findall(Cuerpo, ( clause(Meta, Cuerpo), \+ clausula_ajena(Cuerpo) ), Cuerpos),
     refutar_alternativas(Caso, Cuerpos, Alternativas).
+
+%!  clausula_ajena(+Cuerpo) is semidet.
+%   La cláusula genérica de los diagnósticos aprendidos (Sección 5) unifica
+%   con cualquier candidato/2; para un diagnóstico que no fue aprendido no
+%   es una alternativa real y no debe aparecer en el árbol de refutación.
+clausula_ajena((diagnostico_aprendido(D, _, _), _)) :-
+    \+ diagnostico_aprendido(D, _, _).
 
 %   CORTE: si la parte anterior al corte de una cláusula se cumplió, Prolog
 %   no habría probado las cláusulas siguientes; la revisión se detiene ahí y
@@ -2079,6 +2131,7 @@ pregunta(ojos_hundidos,          '¿Los ojos se ven hundidos?').
 pregunta(piel_sin_elasticidad,   '¿Al pellizcar la piel del lomo, tarda en volver a su lugar?').
 pregunta(inquietud,              '¿Está inquieto, se acuesta y se levanta sin encontrar posición?').
 pregunta(vocalizacion_dolor,     '¿Llora, gime o maúlla de dolor?').
+pregunta(hipotermia,             '¿Está frío al tacto o su temperatura rectal es menor de 37.5 °C?').
 % Antecedentes
 pregunta(vacunacion_completa,    '¿Tiene el esquema de vacunación completo y al día?').
 pregunta(vacunacion_incompleta,  '¿La vacunación está incompleta o nunca fue vacunado?').
@@ -2585,3 +2638,1165 @@ que_falta(_, _, _, _, _, [datos_invalidos, no, Mensaje], [], []) :-
 %   que_falta/8). Falla si no hay nada que preguntar.
 pregunta_desempate(Especie, Edad, Sexo, Entrada, Negados, Pregunta) :-
     que_falta(Especie, Edad, Sexo, Entrada, Negados, _, _, [Pregunta|_]).
+
+
+
+/*  ===========================================================================
+    SECCIÓN 11. LENGUAJE NATURAL CON DCG                          [Entregable 3]
+    El tutor describe el caso con sus palabras ("mi perrito de 4 meses vomita
+    mucho, tiene diarrea con sangre y no tiene fiebre") y esta sección extrae
+    los hechos simbólicos que alimentan al motor de inferencia:
+      1. texto_a_palabras/2 normaliza el texto (minúsculas, sin tildes, sin
+         signos) y lo divide en palabras; los números quedan como números;
+      2. la gramática descripcion//1 (Definite Clause Grammar) recorre las
+         palabras y reconoce fragmentos: hallazgos, negaciones, especie,
+         sexo, edad y mediciones numéricas;
+      3. resumen//5, otra DCG, recorre el camino inverso: a partir de los
+         hechos extraídos GENERA la oración con la que el sistema confirma lo
+         que entendió. Así la comunicación con Python es bidireccional:
+         texto -> hechos -> texto.
+    El léxico es conocimiento declarativo (expresion/2) y el Modo Experto
+    puede ampliarlo en caliente (expresion_aprendida/4, Sección 12).
+    =========================================================================== */
+
+/* ---------------------------------------------------------------------------
+   11.1 Léxico
+   expresion(?Texto, ?Hallazgo)
+       Forma en que un tutor suele decir el hallazgo. Una palabra terminada
+       en * es una raíz: "vomit*" reconoce vomita, vomitó, vomitando...
+       Las tildes no importan: el léxico pasa por la misma normalización
+       que el texto del usuario.
+   palabra_paciente(?Texto, ?Especie, ?Sexo)   Sexo = no_indicado si la
+                                               palabra no lo revela
+   palabra_sexo(?Texto, ?Sexo)
+   palabra_numero(?Palabra, ?Valor)
+   unidad_edad(?Texto, ?Meses)                 meses que vale cada unidad
+   negador(?Palabra)       relleno_negacion(?Palabra)    palabra_vacia(?Palabra)
+   --------------------------------------------------------------------------- */
+% Signos digestivos
+expresion("vomit*", vomito).
+expresion("devuelve la comida", vomito).
+expresion("devolvi* la comida", vomito).
+expresion("vomit* mucho", vomito_persistente).
+expresion("vomit* muchas veces", vomito_persistente).
+expresion("vomit* varias veces", vomito_persistente).
+expresion("vomit* repetid*", vomito_persistente).
+expresion("vomit* sin parar", vomito_persistente).
+expresion("vomit* todo el dia", vomito_persistente).
+expresion("vomit* a cada rato", vomito_persistente).
+expresion("vomit* persistente*", vomito_persistente).
+expresion("vomit* constante*", vomito_persistente).
+expresion("no para de vomit*", vomito_persistente).
+expresion("diarrea*", diarrea).
+expresion("heces liquidas", diarrea).
+expresion("heces blandas", diarrea).
+expresion("popo liquid*", diarrea).
+expresion("popo aguad*", diarrea).
+expresion("diarrea* con sangre", diarrea_con_sangre).
+expresion("diarrea* sanguinolenta*", diarrea_con_sangre).
+expresion("diarrea* negra*", diarrea_con_sangre).
+expresion("heces con sangre", diarrea_con_sangre).
+expresion("heces negras", diarrea_con_sangre).
+expresion("popo con sangre", diarrea_con_sangre).
+expresion("sangre en las heces", diarrea_con_sangre).
+expresion("sangre en la popo", diarrea_con_sangre).
+expresion("arcada*", arcadas_improductivas).
+expresion("intenta vomit* sin", arcadas_improductivas).
+expresion("intenta vomit* y no puede", arcadas_improductivas).
+expresion("quiere vomit* y no puede", arcadas_improductivas).
+expresion("trata de vomit*", arcadas_improductivas).
+expresion("abdomen distendido", abdomen_distendido).
+expresion("abdomen hinchado", abdomen_distendido).
+expresion("abdomen tenso", abdomen_distendido).
+expresion("barriga hinchada", abdomen_distendido).
+expresion("barriga inflada", abdomen_distendido).
+expresion("barriga dura", abdomen_distendido).
+expresion("panza hinchada", abdomen_distendido).
+expresion("panza inflada", abdomen_distendido).
+expresion("estomago hinchado", abdomen_distendido).
+expresion("dolor abdominal", dolor_abdominal).
+expresion("dolor de barriga", dolor_abdominal).
+expresion("dolor de estomago", dolor_abdominal).
+expresion("dolor de panza", dolor_abdominal).
+expresion("dolor en el abdomen", dolor_abdominal).
+expresion("le duele la barriga", dolor_abdominal).
+expresion("le duele el estomago", dolor_abdominal).
+expresion("le duele la panza", dolor_abdominal).
+expresion("se encorva", dolor_abdominal).
+expresion("babe*", salivacion_excesiva).
+expresion("saliva mucho", salivacion_excesiva).
+expresion("saliva excesiva", salivacion_excesiva).
+expresion("mucha baba", salivacion_excesiva).
+expresion("salivacion*", salivacion_excesiva).
+expresion("espuma por la boca", salivacion_excesiva).
+expresion("no come", anorexia).
+expresion("no quiere comer", anorexia).
+expresion("no ha comido", anorexia).
+expresion("dejo de comer", anorexia).
+expresion("sin apetito", anorexia).
+expresion("no tiene apetito", anorexia).
+expresion("perdio el apetito", anorexia).
+expresion("rechaza la comida", anorexia).
+expresion("inapetente", anorexia).
+expresion("anorexia", anorexia).
+expresion("no defeca", sin_defecar).
+expresion("no ha defecado", sin_defecar).
+expresion("sin defecar", sin_defecar).
+expresion("no hace popo", sin_defecar).
+expresion("no ha hecho popo", sin_defecar).
+expresion("no evacua", sin_defecar).
+expresion("estreñid*", sin_defecar).
+expresion("estrenid*", sin_defecar).
+% Signos urinarios
+expresion("esfuerzo para orinar", esfuerzo_para_orinar).
+expresion("hace fuerza para orinar", esfuerzo_para_orinar).
+expresion("puja* para orinar", esfuerzo_para_orinar).
+expresion("le cuesta orinar", esfuerzo_para_orinar).
+expresion("dificultad para orinar", esfuerzo_para_orinar).
+expresion("intenta orinar", esfuerzo_para_orinar).
+expresion("se agacha para orinar", esfuerzo_para_orinar).
+expresion("no orina", ausencia_de_orina).
+expresion("no puede orinar", ausencia_de_orina).
+expresion("no ha orinado", ausencia_de_orina).
+expresion("no sale orina", ausencia_de_orina).
+expresion("no le sale orina", ausencia_de_orina).
+expresion("no hace pipi", ausencia_de_orina).
+expresion("sin orinar", ausencia_de_orina).
+expresion("solo gotas", ausencia_de_orina).
+expresion("orina muchas veces", miccion_frecuente).
+expresion("orina a cada rato", miccion_frecuente).
+expresion("orina seguido", miccion_frecuente).
+expresion("orina poquito", miccion_frecuente).
+expresion("orina frecuente*", miccion_frecuente).
+expresion("miccion frecuente", miccion_frecuente).
+expresion("va mucho al arenero", miccion_frecuente).
+expresion("sangre en la orina", sangre_en_orina).
+expresion("orina con sangre", sangre_en_orina).
+expresion("orina roja", sangre_en_orina).
+expresion("orina rojiza", sangre_en_orina).
+expresion("pipi con sangre", sangre_en_orina).
+expresion("hematuria", sangre_en_orina).
+expresion("orina mucho", poliuria).
+expresion("orina demasiado", poliuria).
+expresion("orina en exceso", poliuria).
+expresion("orina abundante", poliuria).
+expresion("mucha orina", poliuria).
+expresion("hace mucho pipi", poliuria).
+expresion("poliuria", poliuria).
+expresion("bebe mucha agua", polidipsia).
+expresion("bebe mucho", polidipsia).
+expresion("bebe demasiada agua", polidipsia).
+expresion("toma mucha agua", polidipsia).
+expresion("toma mucho", polidipsia).
+expresion("mucha sed", polidipsia).
+expresion("sed excesiva", polidipsia).
+expresion("tiene mucha sed", polidipsia).
+expresion("polidipsia", polidipsia).
+expresion("se lame los genitales", lamido_genital).
+expresion("se lame la zona genital", lamido_genital).
+expresion("se lame el pene", lamido_genital).
+expresion("se lame la vulva", lamido_genital).
+expresion("lamido genital", lamido_genital).
+% Signos respiratorios
+expresion("jade*", jadeo_excesivo).
+expresion("respira agitad*", jadeo_excesivo).
+expresion("respiracion agitada", jadeo_excesivo).
+expresion("dificultad para respirar", dificultad_respiratoria).
+expresion("dificultad respiratoria", dificultad_respiratoria).
+expresion("le cuesta respirar", dificultad_respiratoria).
+expresion("respira con dificultad", dificultad_respiratoria).
+expresion("respira con la boca abierta", dificultad_respiratoria).
+expresion("respira con ruido", dificultad_respiratoria).
+expresion("no puede respirar", dificultad_respiratoria).
+expresion("se ahoga", dificultad_respiratoria).
+expresion("ahogo", dificultad_respiratoria).
+expresion("secrecion nasal", secrecion_nasal).
+expresion("secrecion por la nariz", secrecion_nasal).
+expresion("moco*", secrecion_nasal).
+expresion("flujo nasal", secrecion_nasal).
+expresion("tos", tos).
+expresion("tose", tos).
+expresion("tosiendo", tos).
+expresion("tosio", tos).
+% Signos neurológicos
+expresion("convulsi*", convulsiones).
+expresion("epilep*", convulsiones).
+expresion("le dio un ataque", convulsiones).
+expresion("tiembla", temblores).
+expresion("temblor*", temblores).
+expresion("temblando", temblores).
+expresion("tirita*", temblores).
+expresion("desorientad*", desorientacion).
+expresion("camina en circulos", desorientacion).
+expresion("da vueltas", desorientacion).
+expresion("confundid*", desorientacion).
+expresion("mareado*", desorientacion).
+expresion("se tambalea", desorientacion).
+expresion("no reconoce", desorientacion).
+expresion("mioclon*", mioclonias).
+expresion("tics", mioclonias).
+expresion("tics musculares", mioclonias).
+expresion("espasmo*", mioclonias).
+expresion("sacudidas", mioclonias).
+% Estado general
+expresion("decaid*", letargo).
+expresion("letargic*", letargo).
+expresion("letargo", letargo).
+expresion("apatic*", letargo).
+expresion("desanimad*", letargo).
+expresion("aplanad*", letargo).
+expresion("cansad*", letargo).
+expresion("debil", letargo).
+expresion("debilidad", letargo).
+expresion("sin energia", letargo).
+expresion("duerme mucho", letargo).
+expresion("no quiere jugar", letargo).
+expresion("fiebre", fiebre).
+expresion("febril", fiebre).
+expresion("calentura", fiebre).
+expresion("temperatura alta", fiebre).
+expresion("encias palidas", encias_palidas).
+expresion("encias blancas", encias_palidas).
+expresion("encias descoloridas", encias_palidas).
+expresion("mucosas palidas", encias_palidas).
+expresion("encias rojas", encias_rojo_intenso).
+expresion("encias muy rojas", encias_rojo_intenso).
+expresion("encias rojo intenso", encias_rojo_intenso).
+expresion("mucosas rojas", encias_rojo_intenso).
+expresion("llenado capilar lento", llenado_capilar_lento).
+expresion("llenado capilar prolongado", llenado_capilar_lento).
+expresion("tarda en volver el color", llenado_capilar_lento).
+expresion("colaps*", colapso).
+expresion("desmay*", colapso).
+expresion("se desplomo", colapso).
+expresion("se cayo", colapso).
+expresion("no se puede levantar", colapso).
+expresion("no puede levantarse", colapso).
+expresion("no se levanta", colapso).
+expresion("perdida de peso", perdida_de_peso).
+expresion("perdio peso", perdida_de_peso).
+expresion("ha perdido peso", perdida_de_peso).
+expresion("bajo de peso", perdida_de_peso).
+expresion("adelgaz*", perdida_de_peso).
+expresion("aliento a orina", halitosis_uremica).
+expresion("aliento a amoniaco", halitosis_uremica).
+expresion("mal aliento", halitosis_uremica).
+expresion("halitosis", halitosis_uremica).
+expresion("ojos hundidos", ojos_hundidos).
+expresion("ojos sumidos", ojos_hundidos).
+expresion("piel sin elasticidad", piel_sin_elasticidad).
+expresion("la piel no vuelve", piel_sin_elasticidad).
+expresion("la piel tarda en volver", piel_sin_elasticidad).
+expresion("inquiet*", inquietud).
+expresion("intranquil*", inquietud).
+expresion("ansios*", inquietud).
+expresion("no se acomoda", inquietud).
+expresion("llora", vocalizacion_dolor).
+expresion("llorando", vocalizacion_dolor).
+expresion("gime", vocalizacion_dolor).
+expresion("gimiendo", vocalizacion_dolor).
+expresion("se queja", vocalizacion_dolor).
+expresion("quej*", vocalizacion_dolor).
+expresion("chilla", vocalizacion_dolor).
+expresion("maulla de dolor", vocalizacion_dolor).
+expresion("grita de dolor", vocalizacion_dolor).
+expresion("hipotermia", hipotermia).
+expresion("esta frio", hipotermia).
+expresion("frio al tacto", hipotermia).
+expresion("temperatura baja", hipotermia).
+% Antecedentes
+expresion("vacunad*", vacunacion_completa).
+expresion("vacunas al dia", vacunacion_completa).
+expresion("tiene las vacunas", vacunacion_completa).
+expresion("todas las vacunas", vacunacion_completa).
+expresion("vacunacion completa", vacunacion_completa).
+expresion("no esta vacunad*", vacunacion_incompleta).
+expresion("no vacunad*", vacunacion_incompleta).
+expresion("sin vacuna*", vacunacion_incompleta).
+expresion("no tiene vacunas", vacunacion_incompleta).
+expresion("no tiene las vacunas", vacunacion_incompleta).
+expresion("le faltan vacunas", vacunacion_incompleta).
+expresion("nunca lo vacunaron", vacunacion_incompleta).
+expresion("nunca la vacunaron", vacunacion_incompleta).
+expresion("no lo han vacunado", vacunacion_incompleta).
+expresion("no la han vacunado", vacunacion_incompleta).
+expresion("vacunacion incompleta", vacunacion_incompleta).
+expresion("gestante", gestante).
+expresion("embarazad*", gestante).
+expresion("preñada", gestante).
+expresion("prenada", gestante).
+expresion("enfermedad cronica", enfermedad_cronica_previa).
+expresion("diabetic*", enfermedad_cronica_previa).
+expresion("diabetes", enfermedad_cronica_previa).
+expresion("cardiopata", enfermedad_cronica_previa).
+expresion("gran danes", raza_torax_profundo).
+expresion("pastor aleman", raza_torax_profundo).
+expresion("boxer", raza_torax_profundo).
+expresion("doberman", raza_torax_profundo).
+expresion("san bernardo", raza_torax_profundo).
+expresion("weimaraner", raza_torax_profundo).
+expresion("raza grande", raza_torax_profundo).
+expresion("torax profundo", raza_torax_profundo).
+expresion("bulldog", raza_braquicefala).
+expresion("pug", raza_braquicefala).
+expresion("carlino", raza_braquicefala).
+expresion("shih tzu", raza_braquicefala).
+expresion("persa", raza_braquicefala).
+expresion("braquicefal*", raza_braquicefala).
+expresion("calor", exposicion_calor).
+expresion("al sol", exposicion_calor).
+expresion("insolacion", exposicion_calor).
+expresion("golpe de sol", exposicion_calor).
+expresion("carro cerrado", exposicion_calor).
+expresion("auto cerrado", exposicion_calor).
+expresion("dentro del carro", exposicion_calor).
+expresion("juguete", ingesta_objeto).
+expresion("hueso", ingesta_objeto).
+expresion("media", ingesta_objeto).
+expresion("calcetin", ingesta_objeto).
+expresion("piedra", ingesta_objeto).
+expresion("pelota", ingesta_objeto).
+expresion("tela", ingesta_objeto).
+expresion("objeto", ingesta_objeto).
+expresion("cuerpo extraño", ingesta_objeto).
+expresion("cuerpo extrano", ingesta_objeto).
+expresion("chocolat*", ingesta_chocolate).
+expresion("cacao", ingesta_chocolate).
+expresion("brownie", ingesta_chocolate).
+expresion("xilitol", ingesta_xilitol).
+expresion("chicle*", ingesta_xilitol).
+expresion("goma de mascar", ingesta_xilitol).
+expresion("sin azucar", ingesta_xilitol).
+expresion("uva*", ingesta_uvas).
+expresion("pasas", ingesta_uvas).
+expresion("cebolla*", ingesta_cebolla).
+expresion("ajo", ingesta_cebolla).
+expresion("ajos", ingesta_cebolla).
+expresion("ibuprofeno", ingesta_ibuprofeno).
+expresion("advil", ingesta_ibuprofeno).
+expresion("paracetamol", ingesta_paracetamol).
+expresion("acetaminofen", ingesta_paracetamol).
+expresion("dolex", ingesta_paracetamol).
+expresion("tylenol", ingesta_paracetamol).
+expresion("lirio*", ingesta_lirio).
+expresion("azucena*", ingesta_lirio).
+expresion("raticida", ingesta_raticida).
+expresion("matarratas", ingesta_raticida).
+expresion("veneno para ratas", ingesta_raticida).
+expresion("veneno de ratas", ingesta_raticida).
+
+palabra_paciente("perra",     perro, hembra).
+palabra_paciente("perrita",   perro, hembra).
+palabra_paciente("cachorra",  perro, hembra).
+palabra_paciente("perro",     perro, no_indicado).
+palabra_paciente("perrito",   perro, no_indicado).
+palabra_paciente("perrit*",   perro, no_indicado).
+palabra_paciente("cachorr*",  perro, no_indicado).
+palabra_paciente("canin*",    perro, no_indicado).
+palabra_paciente("gata",      gato,  hembra).
+palabra_paciente("gatita",    gato,  hembra).
+palabra_paciente("gato",      gato,  no_indicado).
+palabra_paciente("gatit*",    gato,  no_indicado).
+palabra_paciente("gatic*",    gato,  no_indicado).
+palabra_paciente("felin*",    gato,  no_indicado).
+palabra_paciente("minin*",    gato,  no_indicado).
+palabra_paciente("michi*",    gato,  no_indicado).
+
+palabra_sexo("macho",        macho).
+palabra_sexo("machito",      macho).
+palabra_sexo("castrado",     macho).
+palabra_sexo("hembra",       hembra).
+palabra_sexo("hembrita",     hembra).
+palabra_sexo("castrada",     hembra).
+palabra_sexo("esterilizada", hembra).
+
+palabra_numero(un, 1).     palabra_numero(uno, 1).    palabra_numero(una, 1).
+palabra_numero(dos, 2).    palabra_numero(tres, 3).   palabra_numero(cuatro, 4).
+palabra_numero(cinco, 5).  palabra_numero(seis, 6).   palabra_numero(siete, 7).
+palabra_numero(ocho, 8).   palabra_numero(nueve, 9).  palabra_numero(diez, 10).
+palabra_numero(once, 11).  palabra_numero(doce, 12).  palabra_numero(quince, 15).
+
+unidad_edad("mes*",    1).
+unidad_edad("año*",   12).
+unidad_edad("anos",   12).
+unidad_edad("ano",    12).
+unidad_edad("semana*", 0.25).
+
+negador(no).  negador(sin).  negador(nunca).  negador(tampoco).  negador(ni).
+
+relleno_negacion(tiene).     relleno_negacion(tenia).    relleno_negacion(tuvo).
+relleno_negacion(presenta).  relleno_negacion(presento). relleno_negacion(muestra).
+relleno_negacion(ha).        relleno_negacion(hay).      relleno_negacion(le).
+relleno_negacion(se).        relleno_negacion(esta).     relleno_negacion(noto).
+relleno_negacion(veo).       relleno_negacion(he).       relleno_negacion(visto).
+relleno_negacion(notado).    relleno_negacion(nada).     relleno_negacion(de).
+
+palabra_vacia(W) :-
+    memberchk(W, [el, la, los, las, lo, un, una, unos, unas, mi, mis, su, sus, tu,
+                  de, del, a, al, y, e, o, u, que, con, en, por, para, es, son,
+                  esta, estan, estuvo, ha, han, he, hay, tiene, tienen, tenia, tuvo,
+                  presenta, presento, muestra, le, les, se, me, muy, mas, pero,
+                  tambien, ademas, desde, hace, hoy, ayer, anoche, manana, tarde,
+                  noche, dia, dias, hora, horas, como, cuando, porque, pues, ya,
+                  poco, mucho, bastante, algo, todo, creo, parece, veo, note,
+                  noto, edad, años, anos, meses, ultimamente, rato, buenas,
+                  hola, doctor, doctora, ayuda, favor, ahora, esta, este, ese,
+                  esa, eso, esto, ni, sin, no, nada, casi, bien, mal, poquito,
+                  seguido, vez, veces, entonces, luego, despues, comio,
+                  comido, trago, tomo, ingirio, mordio, quedo, muchisimo,
+                  demasiado, estaba, estuvo, anda, siento, encuentro]).
+
+%   La raza revela la especie aunque el tutor no diga "perro" o "gato".
+raza_especie(bulldog, perro).   raza_especie(pug, perro).
+raza_especie(carlino, perro).   raza_especie(boxer, perro).
+raza_especie(doberman, perro).  raza_especie(pastor, perro).
+raza_especie(danes, perro).     raza_especie(bernardo, perro).
+raza_especie(weimaraner, perro). raza_especie(tzu, perro).
+raza_especie(persa, gato).
+
+/* ---------------------------------------------------------------------------
+   11.2 Normalización del texto
+   --------------------------------------------------------------------------- */
+
+%!  texto_a_palabras(+Texto, -Palabras) is det.
+%   "¿Mi Perrito VOMITÓ 3 veces?" -> [mi, perrito, vomito, 3, veces]
+%   Minúsculas, sin tildes y sin signos; los números quedan como números y
+%   el asterisco se conserva (marca de raíz en el léxico).
+texto_a_palabras(Texto, Palabras) :-
+    text_to_string(Texto, Cadena),
+    string_lower(Cadena, Minusculas),
+    string_chars(Minusculas, Caracteres0),
+    maplist(normalizar_caracter, Caracteres0, Caracteres),
+    string_chars(Limpia, Caracteres),
+    split_string(Limpia, " ", " ", Partes),
+    convlist(palabra_token, Partes, Palabras).
+
+%   CORTE: cada carácter se normaliza con la primera cláusula que aplica.
+normalizar_caracter(C, N) :- sin_tilde(C, N), !.
+normalizar_caracter(C, C) :- char_type(C, alnum), !.
+normalizar_caracter(C, C) :- memberchk(C, ['.', '*']), !.
+normalizar_caracter(_, ' ').
+
+sin_tilde('á', a).  sin_tilde('é', e).  sin_tilde('í', i).
+sin_tilde('ó', o).  sin_tilde('ú', u).  sin_tilde('ü', u).
+
+%!  palabra_token(+Parte, -Token) is semidet.
+%   Quita puntos sobrantes ("fiebre." -> fiebre) y convierte los números.
+%   Falla con las partes vacías, que convlist/3 descarta.
+palabra_token(Parte, Token) :-
+    split_string(Parte, "", ".", [Recortada]),
+    Recortada \== "",
+    (   number_string(Numero, Recortada)
+    ->  Token = Numero
+    ;   atom_string(Token, Recortada)
+    ).
+
+/* ---------------------------------------------------------------------------
+   11.3 Léxico compilado
+   Cada expresión se convierte una vez en una lista de palabras o raíces
+   (prefijo(R)) para no normalizar el léxico en cada consulta. Se recompila
+   al cargar el archivo y cada vez que el Modo Experto enseña una expresión.
+   --------------------------------------------------------------------------- */
+:- dynamic patron_lexico/2.
+
+%!  compilar_lexico is det.
+compilar_lexico :-
+    retractall(patron_lexico(_, _)),
+    forall(( expresion_del_lexico(Texto, Hallazgo),
+             compilar_patron(Texto, Patron),
+             Patron \== [] ),
+           assertz(patron_lexico(Patron, Hallazgo))).
+
+%!  expresion_del_lexico(?Texto, ?Hallazgo) is nondet.
+%   Léxico original más lo aprendido en Modo Experto (si el hallazgo existe).
+expresion_del_lexico(Texto, Hallazgo) :-
+    expresion(Texto, Hallazgo).
+expresion_del_lexico(Texto, Hallazgo) :-
+    expresion_aprendida(Texto, Hallazgo, _, _),
+    hallazgo_valido(Hallazgo).
+
+%!  compilar_patron(+Texto, -Patron) is det.
+compilar_patron(Texto, Patron) :-
+    texto_a_palabras(Texto, Palabras),
+    maplist(elemento_patron, Palabras, Patron).
+
+%   CORTE: una palabra terminada en * es una raíz; el resto, palabras exactas.
+elemento_patron(Palabra, prefijo(Raiz)) :-
+    atom(Palabra),
+    sub_atom(Palabra, _, 1, 0, '*'), !,
+    sub_atom(Palabra, 0, _, 1, Raiz).
+elemento_patron(Palabra, Palabra).
+
+%!  coincide(+Elemento, +Palabra) is semidet.
+coincide(prefijo(Raiz), Palabra) :- !,
+    atom(Palabra),
+    sub_atom(Palabra, 0, _, _, Raiz).
+coincide(Elemento, Palabra) :-
+    Elemento == Palabra.
+
+%!  coincide_secuencia(+Patron, +Palabras, -Resto) is semidet.
+coincide_secuencia([], Resto, Resto).
+coincide_secuencia([E|Es], [P|Ps], Resto) :-
+    coincide(E, P),
+    coincide_secuencia(Es, Ps, Resto).
+
+%!  coincide_texto(+Texto, +Palabra) is semidet.
+%   Una palabra coincide con una entrada de una sola palabra del léxico.
+coincide_texto(Texto, Palabra) :-
+    compilar_patron(Texto, [Elemento]),
+    coincide(Elemento, Palabra).
+
+/* ---------------------------------------------------------------------------
+   11.4 Gramática de análisis (DCG)
+   descripcion//1 produce una lista de fragmentos f(Tipo, Valor, Palabras):
+     hallazgo  H                 el tutor afirma un hallazgo
+     negado    [H, ...]          el tutor lo niega ("no tiene fiebre ni tos")
+     paciente  [Especie, Sexo]   "mi perrita", "el gato"
+     sexo      Sexo              "es macho"
+     edad      Meses             "de 4 meses", "tiene dos años"
+     medicion  [Variable, Valor] "temperatura de 40.2", "vomitó 5 veces"
+     vacia     Palabra           artículos, preposiciones, verbos de relleno
+     desconocida Palabra         palabra que el sistema aún no conoce
+   Los fragmentos se prueban en este orden y el corte de descripcion//1
+   se queda con el primero que encaja (análisis voraz, sin retroceso entre
+   fragmentos). expresion_larga//1 elige la expresión MÁS LARGA del léxico,
+   por eso "no come" (anorexia) gana frente a la negación de "come".
+   --------------------------------------------------------------------------- */
+
+descripcion([F|Fs]) -->
+    fragmento_con_palabras(F), !,
+    descripcion(Fs).
+descripcion([]) --> [].
+
+%   Guarda las palabras que consumió cada fragmento (para resaltarlas en la
+%   interfaz y para que la explicación cite al usuario).
+fragmento_con_palabras(f(Tipo, Valor, Palabras), Entrada, Resto) :-
+    fragmento(Tipo, Valor, Entrada, Resto),
+    append(Palabras, Resto, Entrada).
+
+fragmento(medicion, [Variable, Valor]) --> medicion(Variable, Valor).
+fragmento(edad, Meses)                 --> edad(Meses).
+fragmento(hallazgo, Hallazgo)          --> expresion_larga(Hallazgo).
+fragmento(paciente, [Especie, Sexo])   --> paciente(Especie, Sexo).
+fragmento(sexo, Sexo)                  --> sexo(Sexo).
+fragmento(negado, Hallazgos)           --> negacion(Hallazgos).
+fragmento(vacia, Palabra)              --> [Palabra], { palabra_vacia(Palabra) }.
+fragmento(desconocida, Palabra)        --> [Palabra].
+
+%   Mediciones numéricas: Python las convierte en hechos discretos
+%   (preprocesamiento.py) antes de enviarlas al motor.
+medicion(temperatura, T) -->
+    [P], { coincide_texto("temperatura", P) ; coincide_texto("fiebre", P) },
+    relleno_corto, numero(T), { T >= 30, T =< 45 }.
+medicion(temperatura, T) -->
+    numero(T), { T >= 30, T =< 45 },
+    [U], { memberchk(U, [grados, grado, c, centigrados]) }.
+medicion(vomitos_24h, N) -->
+    [P], { coincide_texto("vomit*", P) }, relleno_corto,
+    numero(N), [V], { memberchk(V, [veces, vez]) }.
+medicion(llenado_capilar, S) -->
+    [llenado], [capilar], relleno_corto, numero(S),
+    opcional_segundos.
+medicion(dias_sin_defecar, N) -->
+    numero(N), [D], { coincide_texto("dia*", D) }, [sin],
+    relleno_corto, [P], { coincide_texto("defec*", P) ; P == popo ; coincide_texto("evacu*", P) }.
+
+relleno_corto --> [P], { memberchk(P, [de, es, esta, en, mas, unos, unas, hace, hecho, ha, le, el, la]) }, relleno_corto.
+relleno_corto --> [].
+
+opcional_segundos --> [S], { coincide_texto("segundo*", S) }, !.
+opcional_segundos --> [].
+
+edad(Meses) -->
+    numero(N), [U], { unidad_edad(Texto, Factor), coincide_texto(Texto, U) },
+    { Meses is round(N * Factor) }.
+
+numero(N) --> [N], { number(N) }.
+numero(N) --> [P], { atom(P), palabra_numero(P, N) }.
+
+%!  expresion_larga(-Hallazgo)// is semidet.
+%   No terminal escrito a mano (la DCG lo llama con las dos listas de
+%   diferencia): prueba todos los patrones del léxico al comienzo de la
+%   entrada y se queda con el que consume más palabras.
+expresion_larga(Hallazgo, Entrada, Resto) :-
+    findall(N-H-R,
+            ( patron_lexico(Patron, H),
+              coincide_secuencia(Patron, Entrada, R),
+              length(Patron, N) ),
+            Coincidencias),
+    Coincidencias \== [],
+    sort(1, @>=, Coincidencias, [_-Hallazgo-Resto|_]).
+
+paciente(Especie, Sexo) -->
+    [P], { once(( palabra_paciente(Texto, Especie, Sexo),
+                  coincide_texto(Texto, P) )) }.
+
+sexo(Sexo) -->
+    [P], { once(( palabra_sexo(Texto, Sexo), coincide_texto(Texto, P) )) }.
+
+%   "no tiene fiebre ni tos", "sin vómito", "nunca ha convulsionado"
+negacion(Hallazgos) -->
+    [N], { negador(N) },
+    relleno_negacion,
+    lista_negada(Hallazgos).
+
+relleno_negacion --> [P], { relleno_negacion(P) }, relleno_negacion.
+relleno_negacion --> [].
+
+lista_negada([H|Hs]) -->
+    expresion_larga(H),
+    resto_negado(Hs).
+
+%   Solo "ni" y "o" prolongan la negación: en "no tiene fiebre y vomita"
+%   el vómito es una afirmación.
+resto_negado(Hs) -->
+    [C], { memberchk(C, [ni, o]) }, relleno_negacion,
+    lista_negada(Hs), !.
+resto_negado([]) --> [].
+
+/* ---------------------------------------------------------------------------
+   11.5 Gramática de generación (DCG en sentido inverso)
+   A partir de los hechos extraídos produce la oración de confirmación:
+   "Entendí que se trata de un perro macho de 4 meses que presenta vómito
+    y diarrea con sangre, y que no presenta fiebre."
+   --------------------------------------------------------------------------- */
+
+resumen(Especie, Edad, Sexo, Hallazgos, Negados) -->
+    ['Entendí que se trata de'],
+    sujeto(Especie, Sexo, Edad),
+    presenta(Hallazgos),
+    no_presenta(Hallazgos, Negados),
+    ['.'].
+
+sujeto(no_indicado, _, Edad) --> !, ['un paciente'], edad_texto(Edad).
+sujeto(Especie, Sexo, Edad) -->
+    { especie_paciente(Especie, Nombre0), downcase_atom(Nombre0, Nombre) },
+    [un, Nombre], sexo_texto(Sexo), edad_texto(Edad).
+
+sexo_texto(no_indicado) --> !, [].
+sexo_texto(Sexo) --> [Sexo].
+
+edad_texto(no_indicado) --> !, [].
+edad_texto(Meses) --> { Meses >= 24, Meses mod 12 =:= 0 }, !, { A is Meses // 12 }, [de, A, 'años'].
+edad_texto(12) --> !, [de, '1 año'].
+edad_texto(1) --> !, [de, '1 mes'].
+edad_texto(Meses) --> [de, Meses, meses].
+
+presenta([]) --> !, [cuyos, 'hallazgos aún no se identifican'].
+presenta(Hallazgos) --> [que, presenta], enumeracion_hallazgos(Hallazgos, y).
+
+no_presenta(_, []) --> !, [].
+no_presenta([], Negados) --> !, [y, que, no, presenta], enumeracion_hallazgos(Negados, ni).
+no_presenta(_, Negados) --> [',', y, que, no, presenta], enumeracion_hallazgos(Negados, ni).
+
+%   Conjuncion = y para lo que presenta, ni para lo que no presenta.
+enumeracion_hallazgos(Hallazgos, Conjuncion) -->
+    { maplist(nombre_en_minuscula, Hallazgos, Nombres) },
+    enumeracion(Nombres, Conjuncion).
+
+enumeracion([X], _)       --> !, [X].
+enumeracion([X, Y], C)    --> !, [X, C, Y].
+enumeracion([X|Xs], C)    --> [X, ','], enumeracion(Xs, C).
+
+nombre_en_minuscula(Hallazgo, Nombre) :-
+    nombre_legible(Hallazgo, Nombre0),
+    downcase_atom(Nombre0, Nombre).
+
+%!  oracion(+Palabras, -Texto) is det.
+%   Une las palabras y pega las comas y el punto a la palabra anterior.
+oracion(Palabras, Texto) :-
+    atomic_list_concat(Palabras, ' ', Crudo),
+    atomic_list_concat(Partes1, ' ,', Crudo),
+    atomic_list_concat(Partes1, ',', SinComa),
+    atomic_list_concat(Partes2, ' .', SinComa),
+    atomic_list_concat(Partes2, '.', Texto).
+
+/* ---------------------------------------------------------------------------
+   11.6 Del análisis a los hechos del caso
+   --------------------------------------------------------------------------- */
+
+%!  interpretar_texto(+Texto, -Especie, -Edad, -Sexo, -Hallazgos, -Negados,
+%!                    -Mediciones, -Desconocidas, -Fragmentos, -Resumen) is det.
+%   API PARA PYTHON. Analiza la oración del usuario con la DCG y devuelve:
+%     Especie, Edad (meses), Sexo   o no_indicado si el texto no los dice
+%     Hallazgos     afirmados (lista ordenada, sin duplicados)
+%     Negados       negados que no se afirmaron en otra parte del texto
+%     Mediciones    [[Variable, Valor], ...] para el preprocesamiento numérico
+%     Desconocidas  palabras con contenido que el léxico no reconoce
+%     Fragmentos    [[Tipo, Valor, Texto], ...] en el orden de la oración
+%     Resumen       oración generada con resumen//5 (camino inverso)
+%   Valida la entrada: debe ser un texto sin variables (ground/1).
+%   CORTE + FALLBACK: si el texto no es válido se devuelve un análisis vacío.
+interpretar_texto(Texto, Especie, Edad, Sexo, Hallazgos, Negados,
+                  Mediciones, Desconocidas, Fragmentos, Resumen) :-
+    ground(Texto),
+    ( atom(Texto) ; string(Texto) ), !,
+    texto_a_palabras(Texto, Palabras),
+    phrase(descripcion(Fs), Palabras),
+    primer_valor(Fs, especie, Especie),
+    primer_valor(Fs, edad, Edad),
+    primer_valor(Fs, sexo, Sexo),
+    findall(H, ( member(f(hallazgo, H, _), Fs), hallazgo_valido(H) ), Hs0),
+    sort(Hs0, Hallazgos),
+    findall(H, ( member(f(negado, L, _), Fs), member(H, L),
+                 hallazgo_valido(H), \+ memberchk(H, Hallazgos) ), Ns0),
+    sort(Ns0, Negados),
+    findall([V, X], member(f(medicion, [V, X], _), Fs), Mediciones),
+    findall(P, ( member(f(desconocida, P, _), Fs), atom(P) ), Ds0),
+    list_to_set(Ds0, Desconocidas),
+    maplist(exportar_fragmento, Fs, Fragmentos),
+    phrase(resumen(Especie, Edad, Sexo, Hallazgos, Negados), PalabrasResumen),
+    oracion(PalabrasResumen, Resumen).
+interpretar_texto(_, no_indicado, no_indicado, no_indicado, [], [], [], [], [],
+                  'No se recibió un texto para interpretar.').
+
+%!  primer_valor(+Fragmentos, +Dato, -Valor) is det.
+%   Primer valor de especie, sexo o edad mencionado en el texto.
+%   CORTE + FALLBACK: si el texto no lo menciona, no_indicado.
+primer_valor(Fs, especie, Especie) :-
+    member(f(paciente, [Especie, _], _), Fs), !.
+primer_valor(Fs, especie, Especie) :-
+    member(f(hallazgo, _, Palabras), Fs),
+    member(Palabra, Palabras),
+    raza_especie(Palabra, Especie), !.
+primer_valor(Fs, sexo, Sexo) :-
+    member(f(sexo, Sexo, _), Fs), !.
+primer_valor(Fs, sexo, Sexo) :-
+    member(f(paciente, [_, Sexo], _), Fs),
+    Sexo \== no_indicado, !.
+primer_valor(Fs, edad, Edad) :-
+    member(f(edad, Edad, _), Fs), !.
+primer_valor(_, _, no_indicado).
+
+exportar_fragmento(f(Tipo, Valor, Palabras), [Tipo, Valor, Texto]) :-
+    atomic_list_concat(Palabras, ' ', Texto).
+
+
+/*  ===========================================================================
+    SECCIÓN 12. ADQUISICIÓN DINÁMICA DE CONOCIMIENTO (MODO EXPERTO) [Entregable 3]
+    El panel "Modo experto" de la interfaz envía aquí lo que el veterinario
+    quiere enseñar. Cada predicado:
+      1. valida los datos en Prolog (identificador nuevo, hallazgos que
+         existen, perfil que exige evidencia, severidad válida...);
+      2. inyecta las cláusulas en memoria con assertz/1, de modo que el
+         motor las usa en la siguiente consulta sin reiniciar;
+      3. reescribe la Sección 13 de ESTE archivo con portray_clause/2, para
+         que lo aprendido sobreviva a un reinicio de la aplicación.
+    Un diagnóstico aprendido no necesita una regla candidato/2 propia: la
+    cláusula genérica de la Sección 5 lo concluye cuando el caso cumple su
+    perfil, y los módulos "¿Por qué?" y "¿Qué falta?" lo tratan igual que a
+    los diagnósticos originales porque leen los mismos hechos.
+    =========================================================================== */
+
+:- use_module(library(filesex)).    % copy_file/2
+
+/* ---------------------------------------------------------------------------
+   12.1 Validación
+   --------------------------------------------------------------------------- */
+
+%!  identificador_valido(+Id) is semidet.
+%   Átomo en minúscula formado solo por letras a-z, dígitos y guion bajo.
+identificador_valido(Id) :-
+    atomo_minuscula(Id),
+    atom_codes(Id, [Primero|Codigos]),
+    code_type(Primero, csymf),
+    forall(member(C, Codigos),
+           ( code_type(C, csym), C < 128 )).
+
+%!  texto_no_vacio(+Texto) is semidet.
+texto_no_vacio(Texto) :-
+    atom(Texto),
+    normalize_space(atom(Limpio), Texto),
+    Limpio \== ''.
+
+%!  errores_diagnostico(+Datos, -Errores) is det.
+%   Lista de problemas del diagnóstico propuesto ([] si es válido).
+errores_diagnostico(Datos, Errores) :-
+    findall(Mensaje, error_diagnostico(Datos, Mensaje), Errores).
+
+error_diagnostico(Datos, 'Los datos contienen variables libres.') :-
+    \+ ground(Datos).
+error_diagnostico(diagnostico(Id, _, _, _, _, _, _, _, _, _, _, _, _),
+                  'El identificador debe usar solo letras minúsculas, números y guion bajo.') :-
+    \+ identificador_valido(Id).
+error_diagnostico(diagnostico(Id, _, _, _, _, _, _, _, _, _, _, _, _), Mensaje) :-
+    nombre_diagnostico(Id, Nombre),
+    format(atom(Mensaje), 'Ya existe un diagnóstico con el identificador «~w» (~w).', [Id, Nombre]).
+error_diagnostico(diagnostico(_, Nombre, _, _, _, _, _, _, _, _, _, _, _),
+                  'Escriba el nombre del diagnóstico.') :-
+    \+ texto_no_vacio(Nombre).
+error_diagnostico(diagnostico(_, _, Especies, _, _, _, _, _, _, _, _, _, _),
+                  'Elija al menos una especie (perro o gato).') :-
+    \+ ( is_list(Especies), Especies \== [],
+         forall(member(E, Especies), especie_paciente(E, _)) ).
+error_diagnostico(diagnostico(_, _, _, Curso, _, _, _, _, _, _, _, _, _),
+                  'El curso debe ser agudo o cronico.') :-
+    \+ memberchk(Curso, [agudo, cronico]).
+error_diagnostico(diagnostico(_, _, _, _, Requisitos, Apoyo, _, _, _, _, _, _, _), Mensaje) :-
+    append(Requisitos, Apoyo, Todos),
+    member(H, Todos),
+    \+ hallazgo_valido(H),
+    format(atom(Mensaje), 'El hallazgo «~w» no existe en la base de conocimiento.', [H]).
+error_diagnostico(diagnostico(_, _, _, _, Requisitos, Apoyo, _, _, _, _, _, _, _), Mensaje) :-
+    member(H, Requisitos),
+    memberchk(H, Apoyo),
+    format(atom(Mensaje), '«~w» no puede ser a la vez obligatorio y de apoyo.', [H]).
+error_diagnostico(diagnostico(_, _, _, _, _, Apoyo, Minimo, _, _, _, _, _, _), Mensaje) :-
+    length(Apoyo, N),
+    \+ ( integer(Minimo), Minimo >= 0, Minimo =< N ),
+    format(atom(Mensaje), 'El mínimo de signos de apoyo debe estar entre 0 y ~w.', [N]).
+error_diagnostico(diagnostico(_, _, _, _, Requisitos, _, Minimo, _, _, _, _, _, _),
+                  'El perfil debe exigir evidencia: al menos un hallazgo obligatorio o un mínimo de apoyo mayor que 0.') :-
+    Requisitos == [],
+    Minimo == 0.
+error_diagnostico(diagnostico(_, _, _, _, _, _, _, Severidad, _, _, _, _, _),
+                  'La severidad debe ser bajo, medio, alto o critico.') :-
+    \+ nivel_valor(Severidad, _).
+error_diagnostico(diagnostico(_, _, _, _, _, _, _, _, Certeza, _, _, _, _),
+                  'La certeza base debe ser un entero entre 10 y 90 (%).') :-
+    \+ ( integer(Certeza), Certeza >= 10, Certeza =< 90 ).
+error_diagnostico(diagnostico(_, _, _, _, _, _, _, _, _, Indicacion, _, _, _),
+                  'Escriba la indicación para el tutor.') :-
+    \+ texto_no_vacio(Indicacion).
+error_diagnostico(diagnostico(Id, _, _, _, _, _, _, _, _, _, Excluye, ExcluidoPor, _), Mensaje) :-
+    append(Excluye, ExcluidoPor, Otros),
+    member(D, Otros),
+    \+ ( diagnostico_del_catalogo(D), D \== Id ),
+    format(atom(Mensaje), 'El diagnóstico «~w» no existe en el catálogo.', [D]).
+error_diagnostico(diagnostico(_, _, _, _, _, _, _, _, _, _, _, _, Autor),
+                  'Escriba el nombre del experto que enseña la regla.') :-
+    \+ texto_no_vacio(Autor).
+
+/* ---------------------------------------------------------------------------
+   12.2 Construcción de las cláusulas
+   --------------------------------------------------------------------------- */
+
+%!  fecha_actual(-Fecha) is det.
+fecha_actual(Fecha) :-
+    get_time(Ahora),
+    format_time(atom(Fecha), '%Y-%m-%d %H:%M', Ahora).
+
+%!  clausulas_diagnostico(+Datos, +Fecha, -Clausulas) is det.
+%   Hechos que definen el diagnóstico aprendido. No hace falta una regla:
+%   la cláusula genérica candidato/2 de la Sección 5 usa estos hechos.
+clausulas_diagnostico(diagnostico(Id, Nombre, Especies, Curso, Requisitos, Apoyo,
+                                  Minimo, Severidad, Certeza, Indicacion,
+                                  Excluye, ExcluidoPor, Autor),
+                      Fecha, Clausulas) :-
+    Base is Certeza / 100,
+    findall(especie_afectada(Id, E), member(E, Especies), Especiales),
+    findall(excluye(Id, D), member(D, Excluye), Dominadas),
+    findall(excluye(D, Id), member(D, ExcluidoPor), Dominantes),
+    append([ [ diagnostico_aprendido(Id, Autor, Fecha),
+               nombre_diagnostico(Id, Nombre) ],
+             Especiales,
+             [ curso(Id, Curso),
+               requisito(Id, Requisitos),
+               apoyo(Id, Apoyo),
+               minimo_apoyo(Id, Minimo),
+               certeza_base(Id, Base),
+               severidad_base(Id, Severidad),
+               indicacion(Id, Indicacion) ],
+             Dominadas,
+             Dominantes ],
+           Clausulas).
+
+%!  texto_clausulas(+Clausulas, -Texto) is det.
+%   Las cláusulas tal como quedarán escritas en el archivo .pl.
+texto_clausulas(Clausulas, Texto) :-
+    with_output_to(atom(Texto),
+                   forall(member(C, Clausulas), portray_clause(C))).
+
+/* ---------------------------------------------------------------------------
+   12.3 Aprender (assertz/1 + escritura persistente)
+   --------------------------------------------------------------------------- */
+
+%!  vista_previa_diagnostico(+Datos, -Errores, -Texto) is det.
+%   API PARA PYTHON. Valida el diagnóstico y muestra las cláusulas que se
+%   escribirían, sin modificar nada.
+vista_previa_diagnostico(Datos, Errores, Texto) :-
+    errores_diagnostico(Datos, Errores),
+    (   ground(Datos)
+    ->  catch(( clausulas_diagnostico(Datos, 'AAAA-MM-DD hh:mm', Clausulas),
+                texto_clausulas(Clausulas, Texto) ),
+              _, Texto = '')
+    ;   Texto = ''
+    ).
+
+%!  aprender_diagnostico(+Datos, -Estado, -Mensajes) is det.
+%   API PARA PYTHON. Datos =
+%     diagnostico(Id, Nombre, Especies, Curso, Requisitos, Apoyo, Minimo,
+%                 Severidad, CertezaPct, Indicacion, Excluye, ExcluidoPor, Autor)
+%   Estado = ok | error. Si es válido, cada cláusula entra a la memoria con
+%   assertz/1 y se reescribe la Sección 13 del archivo.
+%   CORTE: con errores no se toca la memoria ni el archivo.
+aprender_diagnostico(Datos, error, Errores) :-
+    errores_diagnostico(Datos, Errores),
+    Errores \== [], !.
+aprender_diagnostico(Datos, ok, [Mensaje]) :-
+    fecha_actual(Fecha),
+    clausulas_diagnostico(Datos, Fecha, Clausulas),
+    forall(member(C, Clausulas), assertz(C)),
+    persistir_conocimiento,
+    arg(1, Datos, Id),
+    arg(2, Datos, Nombre),
+    length(Clausulas, N),
+    format(atom(Mensaje),
+           'Se aprendió «~w» (~w): ~w cláusulas en memoria y en la Sección 13 del archivo.',
+           [Nombre, Id, N]).
+
+%!  aprender_hallazgo(+Datos, -Estado, -Mensajes) is det.
+%   API PARA PYTHON. Datos = hallazgo(Id, Nombre, Grupo, Pregunta, Expresiones, Autor)
+%   Agrega un signo (o antecedente) nuevo, su pregunta para el módulo
+%   "¿Qué falta?" y las expresiones con que la DCG lo reconocerá.
+aprender_hallazgo(Datos, error, Errores) :-
+    findall(M, error_hallazgo(Datos, M), Errores),
+    Errores \== [], !.
+aprender_hallazgo(hallazgo(Id, Nombre, Grupo, Pregunta, Expresiones, Autor), ok, [Mensaje]) :-
+    fecha_actual(Fecha),
+    (   sistema_organico(Grupo)
+    ->  Tipo = signo(Id, Grupo)
+    ;   Tipo = antecedente(Id, Grupo)
+    ),
+    findall(expresion_aprendida(E, Id, Autor, Fecha), member(E, Expresiones), Lexico),
+    Clausulas = [ hallazgo_aprendido(Id, Autor, Fecha), Tipo,
+                  nombre_hallazgo(Id, Nombre), pregunta(Id, Pregunta) | Lexico ],
+    forall(member(C, Clausulas), assertz(C)),
+    compilar_lexico,
+    persistir_conocimiento,
+    length(Lexico, N),
+    format(atom(Mensaje), 'Se aprendió el hallazgo «~w» (~w) con ~w expresiones para el lenguaje natural.',
+           [Nombre, Id, N]).
+
+sistema_organico(G) :- memberchk(G, [digestivo, urinario, respiratorio, neurologico, general]).
+
+error_hallazgo(Datos, 'Los datos contienen variables libres.') :-
+    \+ ground(Datos).
+error_hallazgo(hallazgo(Id, _, _, _, _, _),
+               'El identificador debe usar solo letras minúsculas, números y guion bajo.') :-
+    \+ identificador_valido(Id).
+error_hallazgo(hallazgo(Id, _, _, _, _, _), Mensaje) :-
+    hallazgo_valido(Id),
+    format(atom(Mensaje), 'Ya existe el hallazgo «~w».', [Id]).
+error_hallazgo(hallazgo(_, Nombre, _, _, _, _), 'Escriba el nombre del hallazgo.') :-
+    \+ texto_no_vacio(Nombre).
+error_hallazgo(hallazgo(_, _, Grupo, _, _, _), 'Elija un grupo válido.') :-
+    \+ nombre_grupo(Grupo, _).
+error_hallazgo(hallazgo(_, _, _, Pregunta, _, _), 'Escriba la pregunta para el tutor.') :-
+    \+ texto_no_vacio(Pregunta).
+error_hallazgo(hallazgo(_, _, _, _, Expresiones, _),
+               'Escriba al menos una expresión con la que el tutor lo describiría.') :-
+    \+ ( is_list(Expresiones), member(E, Expresiones), texto_no_vacio(E) ).
+error_hallazgo(hallazgo(_, _, _, _, _, Autor), 'Escriba el nombre del experto.') :-
+    \+ texto_no_vacio(Autor).
+
+%!  aprender_expresion(+Texto, +Hallazgo, +Autor, -Estado, -Mensajes) is det.
+%   API PARA PYTHON. Enseña a la DCG una forma nueva de decir un hallazgo
+%   que ya existe (sinónimo).
+aprender_expresion(Texto, Hallazgo, Autor, error, Errores) :-
+    findall(M, error_expresion(Texto, Hallazgo, Autor, M), Errores),
+    Errores \== [], !.
+aprender_expresion(Texto, Hallazgo, Autor, ok, [Mensaje]) :-
+    fecha_actual(Fecha),
+    assertz(expresion_aprendida(Texto, Hallazgo, Autor, Fecha)),
+    compilar_lexico,
+    persistir_conocimiento,
+    nombre_legible(Hallazgo, Nombre),
+    format(atom(Mensaje), 'Desde ahora «~w» se interpreta como «~w».', [Texto, Nombre]).
+
+error_expresion(Texto, Hallazgo, Autor, 'Los datos contienen variables libres.') :-
+    \+ ground(Texto-Hallazgo-Autor).
+error_expresion(Texto, _, _, 'Escriba la expresión.') :-
+    \+ texto_no_vacio(Texto).
+error_expresion(_, Hallazgo, _, Mensaje) :-
+    \+ hallazgo_valido(Hallazgo),
+    format(atom(Mensaje), 'El hallazgo «~w» no existe.', [Hallazgo]).
+error_expresion(Texto, Hallazgo, _, Mensaje) :-
+    texto_no_vacio(Texto),
+    compilar_patron(Texto, Patron),
+    patron_lexico(Patron, Hallazgo),
+    format(atom(Mensaje), 'El léxico ya reconoce «~w» como ese hallazgo.', [Texto]).
+error_expresion(_, _, Autor, 'Escriba el nombre del experto.') :-
+    \+ texto_no_vacio(Autor).
+
+/* ---------------------------------------------------------------------------
+   12.4 Olvidar lo aprendido (retract/1 + escritura persistente)
+   --------------------------------------------------------------------------- */
+
+%!  olvidar(+Tipo, +Id, -Estado, -Mensajes) is det.
+%   API PARA PYTHON. Tipo = diagnostico | hallazgo | expresion. Solo se
+%   puede olvidar lo que se aprendió en Modo Experto: el conocimiento
+%   original del archivo no se toca.
+olvidar(diagnostico, Id, ok, [Mensaje]) :-
+    diagnostico_aprendido(Id, _, _), !,
+    forall(clausula_de_diagnostico(Id, C), retract(C)),
+    persistir_conocimiento,
+    format(atom(Mensaje), 'Se olvidó el diagnóstico «~w».', [Id]).
+olvidar(hallazgo, Id, error, [Mensaje]) :-
+    hallazgo_aprendido(Id, _, _),
+    usado_por(Id, D), !,
+    format(atom(Mensaje), 'No se puede olvidar «~w»: lo usa el diagnóstico «~w».', [Id, D]).
+olvidar(hallazgo, Id, ok, [Mensaje]) :-
+    hallazgo_aprendido(Id, _, _), !,
+    forall(clausula_de_hallazgo(Id, C), retract(C)),
+    compilar_lexico,
+    persistir_conocimiento,
+    format(atom(Mensaje), 'Se olvidó el hallazgo «~w».', [Id]).
+olvidar(expresion, Texto, ok, [Mensaje]) :-
+    expresion_aprendida(Texto, _, _, _), !,
+    retractall(expresion_aprendida(Texto, _, _, _)),
+    compilar_lexico,
+    persistir_conocimiento,
+    format(atom(Mensaje), 'Se olvidó la expresión «~w».', [Texto]).
+olvidar(_, Id, error, [Mensaje]) :-
+    format(atom(Mensaje), '«~w» no es conocimiento aprendido en Modo Experto.', [Id]).
+
+usado_por(Hallazgo, Diagnostico) :-
+    ( requisito(Diagnostico, L) ; apoyo(Diagnostico, L) ),
+    memberchk(Hallazgo, L).
+
+%!  clausula_de_diagnostico(+Id, -Clausula) is nondet.
+%   Todas las cláusulas que pertenecen a un diagnóstico aprendido.
+clausula_de_diagnostico(Id, Clausula) :-
+    member(Clausula, [ diagnostico_aprendido(Id, _, _), nombre_diagnostico(Id, _),
+                       especie_afectada(Id, _), curso(Id, _), requisito(Id, _),
+                       apoyo(Id, _), minimo_apoyo(Id, _), certeza_base(Id, _),
+                       severidad_base(Id, _), indicacion(Id, _),
+                       excluye(Id, _), excluye(_, Id) ]),
+    clause(Clausula, true).
+
+%!  clausula_de_hallazgo(+Id, -Clausula) is nondet.
+clausula_de_hallazgo(Id, Clausula) :-
+    member(Clausula, [ hallazgo_aprendido(Id, _, _), signo(Id, _), antecedente(Id, _),
+                       nombre_hallazgo(Id, _), pregunta(Id, _),
+                       expresion_aprendida(_, Id, _, _) ]),
+    clause(Clausula, true).
+
+/* ---------------------------------------------------------------------------
+   12.5 Persistencia en el archivo .pl
+   La Sección 13 empieza en una línea marca. Todo lo que está por encima se
+   copia tal cual; lo que está por debajo se reescribe con lo que hay en
+   memoria. Antes de escribir se guarda una copia en base_conocimiento.pl.bak.
+   --------------------------------------------------------------------------- */
+
+%!  marca_aprendizaje(-Marca) is det.
+%   Se arma por partes para que el texto de la marca no aparezca en el
+%   código y solo exista una vez en el archivo.
+marca_aprendizaje(Marca) :-
+    atomic_list_concat(['%% >>> CONOCIMIENTO APRENDIDO', ' EN CALIENTE >>>'], Marca).
+
+%!  persistir_conocimiento is det.
+persistir_conocimiento :-
+    archivo_base(Archivo),
+    marca_aprendizaje(Marca),
+    % Se lee línea por línea hasta la marca. Buscar la marca dentro del
+    % archivo completo como una sola cadena (sub_string/5) es muy lento con
+    % textos largos que tienen tildes.
+    setup_call_cleanup(
+        open(Archivo, read, Entrada, [encoding(utf8)]),
+        lineas_hasta_marca(Entrada, Marca, Encabezado),
+        close(Entrada)), !,
+    atom_concat(Archivo, '.bak', Respaldo),
+    copy_file(Archivo, Respaldo),
+    setup_call_cleanup(
+        open(Archivo, write, Salida, [encoding(utf8), newline(posix)]),
+        ( forall(member(Linea, Encabezado), format(Salida, '~s~n', [Linea])),
+          escribir_aprendido(Salida) ),
+        close(Salida)).
+
+%!  lineas_hasta_marca(+Entrada, +Marca, -Lineas) is semidet.
+%   Líneas del archivo hasta la marca, incluida. Falla si no hay marca, y
+%   en ese caso persistir_conocimiento/0 no escribe nada.
+lineas_hasta_marca(Entrada, Marca, Lineas) :-
+    read_line_to_string(Entrada, Linea0),
+    Linea0 \== end_of_file,
+    split_string(Linea0, "", "\r", [Linea]),
+    (   atom_string(Marca, Linea)
+    ->  Lineas = [Linea]
+    ;   Lineas = [Linea|Resto],
+        lineas_hasta_marca(Entrada, Marca, Resto)
+    ).
+
+%!  escribir_aprendido(+Salida) is det.
+%   Escribe lo aprendido agrupado y con un comentario por cada elemento.
+escribir_aprendido(Salida) :-
+    forall(hallazgo_aprendido(H, Autor, Fecha),
+           ( format(Salida, '~n%% Hallazgo aprendido: ~w · experto: ~w · ~w~n', [H, Autor, Fecha]),
+             forall(clausula_de_hallazgo(H, C), portray_clause(Salida, C)) )),
+    (   expresion_suelta(_)
+    ->  format(Salida, '~n%% Expresiones aprendidas para hallazgos existentes~n', [])
+    ;   true
+    ),
+    forall(expresion_suelta(C), portray_clause(Salida, C)),
+    forall(diagnostico_aprendido(D, Autor, Fecha),
+           ( format(Salida, '~n%% Diagnóstico aprendido: ~w · experto: ~w · ~w~n', [D, Autor, Fecha]),
+             forall(clausula_de_diagnostico(D, C), portray_clause(Salida, C)) )).
+
+expresion_suelta(expresion_aprendida(T, H, A, F)) :-
+    expresion_aprendida(T, H, A, F),
+    \+ hallazgo_aprendido(H, _, _).
+
+/* ---------------------------------------------------------------------------
+   12.6 Consultas del panel
+   --------------------------------------------------------------------------- */
+
+%!  conocimiento_aprendido(-Diagnosticos, -Hallazgos, -Expresiones) is det.
+%   API PARA PYTHON. Lo aprendido en Modo Experto, para listarlo:
+%     Diagnosticos [[Id, Nombre, Autor, Fecha, Requisitos, Apoyo, Minimo, Severidad, Especies]]
+%     Hallazgos    [[Id, Nombre, Grupo, Autor, Fecha]]
+%     Expresiones  [[Texto, Hallazgo, Autor, Fecha]]
+conocimiento_aprendido(Diagnosticos, Hallazgos, Expresiones) :-
+    findall([Id, Nombre, Autor, Fecha, R, A, M, S, Es],
+            ( diagnostico_aprendido(Id, Autor, Fecha),
+              nombre_diagnostico(Id, Nombre),
+              requisito(Id, R), apoyo(Id, A), minimo_apoyo(Id, M),
+              severidad_base(Id, S),
+              findall(E, especie_afectada(Id, E), Es) ),
+            Diagnosticos),
+    findall([Id, Nombre, Grupo, Autor, Fecha],
+            ( hallazgo_aprendido(Id, Autor, Fecha),
+              nombre_hallazgo(Id, Nombre),
+              grupo_hallazgo(Id, Grupo) ),
+            Hallazgos),
+    findall([T, H, Autor, Fecha], expresion_aprendida(T, H, Autor, Fecha), Expresiones).
+
+%!  texto_aprendido(-Texto) is det.
+%   API PARA PYTHON. Lo aprendido tal como está en memoria, en sintaxis
+%   Prolog (para compararlo con lo escrito en el archivo).
+texto_aprendido(Texto) :-
+    with_output_to(atom(Texto), ( current_output(Salida), escribir_aprendido(Salida) )).
+
+:- initialization(compilar_lexico).
+
+
+/*  ===========================================================================
+    SECCIÓN 13. CONOCIMIENTO APRENDIDO EN CALIENTE                 [Entregable 3]
+    Las cláusulas debajo de la marca las escribe persistir_conocimiento/0
+    cada vez que el Modo Experto aprende u olvida algo. Al reiniciar la
+    aplicación, consult/1 las vuelve a cargar junto con el resto del archivo:
+    así el aprendizaje sobrevive a los reinicios.
+    NO edite a mano por debajo de la marca: se reescribe en cada cambio.
+    =========================================================================== */
+%% >>> CONOCIMIENTO APRENDIDO EN CALIENTE >>>
+
+%% Hallazgo aprendido: ictericia · experto: Dra. Ospina · 2026-11-09 23:57
+hallazgo_aprendido(ictericia, 'Dra. Ospina', '2026-11-09 23:57').
+signo(ictericia, general).
+nombre_hallazgo(ictericia, 'Piel u ojos amarillos (ictericia)').
+pregunta(ictericia, '¿Tiene la piel, las encías o el blanco de los ojos amarillos?').
+expresion_aprendida('ojos amarillos', ictericia, 'Dra. Ospina', '2026-11-09 23:57').
+expresion_aprendida('piel amarilla', ictericia, 'Dra. Ospina', '2026-11-09 23:57').
+expresion_aprendida('amarill*', ictericia, 'Dra. Ospina', '2026-11-09 23:57').
+
+%% Diagnóstico aprendido: leptospirosis · experto: Dra. Ospina · 2026-11-09 23:58
+diagnostico_aprendido(leptospirosis, 'Dra. Ospina', '2026-11-09 23:58').
+nombre_diagnostico(leptospirosis, 'Leptospirosis').
+especie_afectada(leptospirosis, perro).
+especie_afectada(leptospirosis, gato).
+curso(leptospirosis, agudo).
+requisito(leptospirosis, [ictericia]).
+apoyo(leptospirosis, [fiebre, letargo, anorexia, vomito, vomito_persistente]).
+minimo_apoyo(leptospirosis, 1).
+certeza_base(leptospirosis, 0.6).
+severidad_base(leptospirosis, alto).
+indicacion(leptospirosis, 'Use guantes al manipular la orina, no lo deje en contacto con agua estancada y acuda hoy al veterinario.').

@@ -1,0 +1,142 @@
+==============================================================================
+ TriaVet · Pruebas del Entregable 3 (DCG y aprendizaje en caliente)
+ Ejecutado: 2026-11-10 00:00:18
+==============================================================================
+Copia de trabajo de la base: C:\Users\arlen\AppData\Local\Temp\triavet_bixnugcd\base_conocimiento.pl
+Huella inicial del .pl: 8bbf5a3eb13ee02a
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E3-1 · DCG: extracción de hechos del texto libre
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : La gramática extrae especie, edad y hallazgos de una oración del tutor.
+  Texto: «Mi perrito de 4 meses vomita mucho, tiene diarrea con sangre y está muy decaído. No tiene fiebre ni tos. Nunca lo vacunaron.»
+  ?- interpretar_texto('Mi perrito de 4 meses vomita mucho, tiene diarrea con sangre y está muy decaído. No tiene fiebre ni tos. Nunca lo vacunaron.', Especie, Edad, Sexo, Hallazgos, Negados, Mediciones, Desconocidas, Fragmentos, Resumen).
+  Especie=perro · Edad=4 meses · Sexo=None
+  Hallazgos=['diarrea_con_sangre', 'letargo', 'vacunacion_incompleta', 'vomito_persistente']
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E3-2 · DCG: negaciones y expresiones más largas
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : «no tiene fiebre ni tos» niega; «no come» y «no orina» son hallazgos.
+  Negados=['fiebre', 'tos']
+  Texto: «El gato no come, no orina y no tiene fiebre» -> hallazgos=['anorexia', 'ausencia_de_orina'] · negados=['fiebre']
+  Fragmentos reconocidos: [('hallazgo', 'vomita mucho'), ('hallazgo', 'diarrea con sangre'), ('hallazgo', 'decaido'), ('negado', 'no tiene fiebre ni tos'), ('hallazgo', 'nunca lo vacunaron')]
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E3-3 · DCG en sentido inverso: oración de confirmación
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : resumen//5 genera el texto a partir de los hechos (comunicación bidireccional).
+  Oración generada por resumen//5: «Entendí que se trata de un perro de 4 meses que presenta diarrea con sangre, decaimiento (letargo), vacunación incompleta o ausente y vómito persistente, y que no presenta fiebre ni tos.»
+  «Mi bulldog…» -> especie=perro · ['colapso', 'exposicion_calor', 'raza_braquicefala']
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E3-4 · Mediciones y preprocesamiento numérico
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : La DCG extrae números y el clasificador los convierte en hechos discretos.
+  Texto: «Mi gata de 2 años vomitó 5 veces y tiene temperatura de 40,2» -> mediciones=[('vomitos_24h', 5.0), ('temperatura', 40.2)]
+    Vómitos en las últimas 24 h 5 veces -> persistente -> vomito_persistente (árbol de decisión (scikit-learn))
+    Temperatura rectal 40.2 °C -> fiebre -> fiebre (árbol de decisión (scikit-learn))
+  Cortes aprendidos para la temperatura (gato): [37.65, 39.25]
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E3-5 · Del texto al dictamen
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : El texto libre alimenta analizar_caso/10 sin formulario.
+  ?- analizar_caso('perro', 4, 'macho', ['diarrea_con_sangre', 'letargo', 'vacunacion_incompleta', 'vomito_persistente'], Validos, Ignorados, Alarmas, Diagnosticos, Prioridad, Recomendacion).
+  Dictamen: [('parvovirosis', 'critico', 90)] · prioridad CRÍTICO
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E3-6 · Entradas vacías, extrañas o con código
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : El texto viaja como dato y las palabras desconocidas se informan.
+  Texto vacío -> hallazgos=[] · «Entendí que se trata de un paciente cuyos hallazgos aún no se identifican.»
+  Texto con código Prolog -> hallazgos=['tos'] · desconocidas=['x', 'halt', 'estornudos', 'raros']
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E3-7 · Modo Experto: validación en Prolog
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Un diagnóstico mal definido se rechaza con sus motivos y el .pl no cambia.
+  ?- aprender_diagnostico(diagnostico('lepto_spirosis', '', [], 'agudo', [], ['fiebre', 'vomito', 'letargo', 'anorexia'], 0, 'grave', 5, 'Use guantes al manipular la orina y acuda hoy al veterinario.', ['no_existe'], [], 'Dra. Prueba'), Estado, Mensajes).
+    ✘ Escriba el nombre del diagnóstico.
+    ✘ Elija al menos una especie (perro o gato).
+    ✘ El perfil debe exigir evidencia: al menos un hallazgo obligatorio o un mínimo de apoyo mayor que 0.
+    ✘ La severidad debe ser bajo, medio, alto o critico.
+    ✘ La certeza base debe ser un entero entre 10 y 90 (%).
+    ✘ El diagnóstico «no_existe» no existe en el catálogo.
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E3-8 · Modo Experto: aprendizaje en caliente (assertz/1 + .pl)
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : El hallazgo y el diagnóstico nuevos se usan de inmediato y quedan escritos en el .pl.
+  Antes de aprender, «ojos amarillos» -> ['fiebre', 'letargo'] · no reconocidas ['ojos', 'amarillos']
+  ?- aprender_hallazgo(hallazgo('ictericia', 'Piel u ojos amarillos (ictericia)', 'general', '¿Tiene la piel, las encías o el blanco de los ojos amarillos?', ['ojos amarillos', 'piel amarilla', 'amarill*'], 'Dra. Prueba'), Estado, Mensajes).
+    Se aprendió el hallazgo «Piel u ojos amarillos (ictericia)» (ictericia) con 3 expresiones para el lenguaje natural.
+  ?- aprender_diagnostico(diagnostico('leptospirosis', 'Leptospirosis', ['perro'], 'agudo', ['ictericia'], ['fiebre', 'vomito', 'letargo', 'anorexia'], 1, 'alto', 60, 'Use guantes al manipular la orina y acuda hoy al veterinario.', [], [], 'Dra. Prueba'), Estado, Mensajes).
+    Se aprendió «Leptospirosis» (leptospirosis): 10 cláusulas en memoria y en la Sección 13 del archivo.
+  Sin reiniciar, la DCG ya entiende: ['fiebre', 'ictericia', 'letargo']
+  Dictamen en caliente: [('leptospirosis', 'alto', 80)]
+  Traza: Leptospirosis: regla aprendida en Modo Experto (Dra. Prueba); el caso cumple su perfil
+  Sección 13 del .pl:
+    %% Hallazgo aprendido: ictericia · experto: Dra. Prueba · 2026-11-10 00:00
+    hallazgo_aprendido(ictericia, 'Dra. Prueba', '2026-11-10 00:00').
+    signo(ictericia, general).
+    nombre_hallazgo(ictericia, 'Piel u ojos amarillos (ictericia)').
+    pregunta(ictericia, '¿Tiene la piel, las encías o el blanco de los ojos amarillos?').
+    expresion_aprendida('ojos amarillos', ictericia, 'Dra. Prueba', '2026-11-10 00:00').
+    expresion_aprendida('piel amarilla', ictericia, 'Dra. Prueba', '2026-11-10 00:00').
+    expresion_aprendida('amarill*', ictericia, 'Dra. Prueba', '2026-11-10 00:00').
+    
+    %% Diagnóstico aprendido: leptospirosis · experto: Dra. Prueba · 2026-11-10 00:00
+    diagnostico_aprendido(leptospirosis, 'Dra. Prueba', '2026-11-10 00:00').
+    nombre_diagnostico(leptospirosis, 'Leptospirosis').
+    especie_afectada(leptospirosis, perro).
+    curso(leptospirosis, agudo).
+    requisito(leptospirosis, [ictericia]).
+    apoyo(leptospirosis, [fiebre, vomito, letargo, anorexia]).
+    minimo_apoyo(leptospirosis, 1).
+    certeza_base(leptospirosis, 0.6).
+    severidad_base(leptospirosis, alto).
+    indicacion(leptospirosis, 'Use guantes al manipular la orina y acuda hoy al veterinario.').
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E3-9 · Persistencia tras reiniciar
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Un proceso nuevo carga el .pl y conserva la regla aprendida.
+  Proceso nuevo (PID distinto) cargó la copia del .pl y respondió: {'aprendidos': ['leptospirosis'], 'hallazgos': ['fiebre', 'ictericia', 'letargo'], 'dictamen': ['leptospirosis']}
+  Recarga (consult/1) en este proceso: aprendidos=['leptospirosis'] (sin duplicados)
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E3-10 · Olvidar lo aprendido (retract/1 + .pl)
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Se retira lo aprendido y el archivo vuelve a su estado original.
+  Olvidar ictericia mientras la usa la leptospirosis -> ['No se puede olvidar «ictericia»: lo usa el diagnóstico «leptospirosis».']
+  ?- olvidar('diagnostico', 'leptospirosis', Estado, Mensajes). -> ['Se olvidó el diagnóstico «leptospirosis».']
+  ?- olvidar('hallazgo', 'ictericia', Estado, Mensajes). -> ['Se olvidó el hallazgo «ictericia».']
+  Olvidar un diagnóstico original -> ['«parvovirosis» no es conocimiento aprendido en Modo Experto.']
+  Huella del .pl: 8bbf5a3eb13ee02a (original 8bbf5a3eb13ee02a)
+Veredicto: ✔ PASÓ
+
+==============================================================================
+ RESUMEN
+==============================================================================
+ ✔ Prueba E3-1 · DCG: extracción de hechos del texto libre
+ ✔ Prueba E3-2 · DCG: negaciones y expresiones más largas
+ ✔ Prueba E3-3 · DCG en sentido inverso: oración de confirmación
+ ✔ Prueba E3-4 · Mediciones y preprocesamiento numérico
+ ✔ Prueba E3-5 · Del texto al dictamen
+ ✔ Prueba E3-6 · Entradas vacías, extrañas o con código
+ ✔ Prueba E3-7 · Modo Experto: validación en Prolog
+ ✔ Prueba E3-8 · Modo Experto: aprendizaje en caliente (assertz/1 + .pl)
+ ✔ Prueba E3-9 · Persistencia tras reiniciar
+ ✔ Prueba E3-10 · Olvidar lo aprendido (retract/1 + .pl)
+
+ 10 de 10 pruebas aprobadas.

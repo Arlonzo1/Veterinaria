@@ -1,6 +1,6 @@
 ==============================================================================
  TriaVet · Pruebas del Entregable 2 (explicabilidad y recomendación)
- Ejecutado: 2026-10-21 19:21:51
+ Ejecutado: 2026-11-09 23:59:20
 ==============================================================================
 Base de conocimiento cargada: base_conocimiento.pl
 
@@ -38,6 +38,8 @@ Objetivo : En el mismo caso, cada hipótesis que comparte hallazgos debe descart
         Descartada por una condición excluyente (\+): El paciente es cachorro.
     Gastroenteritis aguda inespecífica [exclusion] comparte ['vomito', 'diarrea_con_sangre', 'anorexia']
         Se descarta porque «Parvovirosis canina» también se cumple y la excluye (excluye/2): explica mejor los mismos hallazgos.
+    Leptospirosis [evidencia_insuficiente] comparte ['letargo', 'anorexia', 'vomito']
+        Falta evidencia crítica: «Piel u ojos amarillos (ictericia)» (obligatorio).
     Intoxicación [evidencia_insuficiente] comparte ['vomito', 'letargo']
         Falta evidencia crítica: al menos uno de: Ingesta de chocolate, Ingesta de xilitol, Ingesta de uvas o pasas, Ingesta de cebolla o ajo, Ingesta de ibuprofeno, Ingesta de paracetamol, Ingesta de lirio o Ingesta de raticida.
     Golpe de calor [evidencia_insuficiente] comparte ['letargo', 'vomito']
@@ -103,17 +105,18 @@ Objetivo : Perro decaído que no come: ningún perfil se completa; varias hipót
   ?- que_falta('perro', 48, 'hembra', ['letargo', 'anorexia'], [], Estado, Competidoras, Sugerencias).
   Estado: insuficiente (activo=True) Evidencia insuficiente: ningún perfil diagnóstico se completa con los hallazgos ingresados.
     Compite: Obstrucción intestinal por cuerpo extraño activación 67 % falta ['«Vómito persistente» (obligatorio)']
+    Compite: Leptospirosis activación 67 % falta ['«Piel u ojos amarillos (ictericia)» (obligatorio)']
     Compite: Parvovirosis canina activación 50 % falta ['«Diarrea con sangre» (obligatorio)', '«Vacunación incompleta o ausente» (obligatorio)']
     Compite: Moquillo canino (distemper) activación 50 % falta ['«Fiebre» (obligatorio)', '«Secreción nasal» (obligatorio)']
     Compite: Intoxicación activación 50 % falta ['al menos uno de: Ingesta de chocolate, Ingesta de xilitol, Ingesta de uvas o pasas, Ingesta de cebolla o ajo, Ingesta de ibuprofeno, Ingesta de paracetamol, Ingesta de lirio o Ingesta de raticida']
     Compite: Enfermedad renal crónica activación 50 % falta ['«Bebe en exceso (polidipsia)» (obligatorio)', '«Orina en exceso (poliuria)» (obligatorio)']
     Compite: Gastroenteritis aguda inespecífica activación 50 % falta ['al menos uno de: Vómito, Vómito persistente, Diarrea o Diarrea con sangre']
     Compite: Golpe de calor activación 33 % falta ['«Exposición al calor» (obligatorio)', '«Jadeo excesivo» (obligatorio)']
-    1. ¿El vómito es repetido (más de 3 veces en el día) o no cede? (peso 22.6)
-    2. ¿Tiene fiebre (temperatura rectal mayor de 39.2 °C)? (peso 18.0)
-    3. ¿La vacunación está incompleta o nunca fue vacunado? (peso 18.0)
-    4. ¿La diarrea tiene sangre roja o es negra? (peso 15.0)
-    5. ¿Pudo haber ingerido alguna sustancia tóxica? Indique cuál. (peso 13.5)
+    1. ¿El vómito es repetido (más de 3 veces en el día) o no cede? (peso 28.6)
+    2. ¿Tiene fiebre (temperatura rectal mayor de 39.2 °C)? (peso 24.0)
+    3. ¿Tiene la piel, las encías o el blanco de los ojos amarillos? (peso 18.1)
+    4. ¿La vacunación está incompleta o nunca fue vacunado? (peso 18.0)
+    5. ¿La diarrea tiene sangre roja o es negra? (peso 15.0)
 Veredicto: ✔ PASÓ
 
 ──────────────────────────────────────────────────────────────────────────────
