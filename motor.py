@@ -32,6 +32,10 @@ Predicados de Prolog invocados (ver docs/diccionario_predicados.md):
   aprender_expresion/5     -> MotorTriaVet.aprender_expresion()    assertz + .pl
   olvidar/4                -> MotorTriaVet.olvidar()               retract + .pl
   conocimiento_aprendido/3 -> MotorTriaVet.conocimiento_aprendido()
+  editar_diagnostico/3     -> MotorTriaVet.editar_diagnostico()    retract + assertz + .pl
+  editar_hallazgo/3        -> MotorTriaVet.editar_hallazgo()       retract + assertz + .pl
+  catalogo_diagnosticos/1  -> MotorTriaVet.catalogo_diagnosticos() originales y aprendidos
+  catalogo_hallazgos_completo/1 -> MotorTriaVet.catalogo_hallazgos()
   texto_aprendido/1        -> MotorTriaVet.texto_aprendido()
 """
 
@@ -254,6 +258,45 @@ class DiagnosticoAprendido:
     minimo: int
     severidad: str
     especies: list[str]
+
+
+@dataclass
+class DiagnosticoCatalogo:
+    """Un diagnóstico de la base (original o aprendido) para el Modo Experto."""
+
+    id: str
+    nombre: str
+    origen: str          # original | aprendido
+    severidad: str
+    curso: str
+    requisitos: list[str]
+    apoyo: list[str]
+    minimo: int
+    especies: list[str]
+    autor: str
+    fecha: str
+
+    @property
+    def aprendido(self) -> bool:
+        return self.origen == "aprendido"
+
+
+@dataclass
+class HallazgoCatalogo:
+    """Un hallazgo de la base (original o aprendido) para el Modo Experto."""
+
+    id: str
+    nombre: str
+    grupo: str
+    origen: str          # original | aprendido
+    autor: str
+    fecha: str
+    usado_por: list[str]
+    expresiones: int
+
+    @property
+    def aprendido(self) -> bool:
+        return self.origen == "aprendido"
 
 
 @dataclass
@@ -725,6 +768,70 @@ class MotorTriaVet:
         """Retira de la memoria y del .pl algo aprendido (tipo: diagnostico | hallazgo | expresion)."""
         clave = termino_texto(id_, 200) if tipo == "expresion" else termino_atomo(id_)
         return self._aprendizaje(f"olvidar({termino_atomo(tipo)}, {clave}, Estado, Mensajes)")
+
+    def vista_previa_edicion(self, datos: dict) -> tuple[list[str], str]:
+        """Como vista_previa_diagnostico(), pero valida en modo edición."""
+        consulta = f"vista_previa_edicion({self.termino_diagnostico(datos)}, Errores, Texto)"
+        s = self.consultar(consulta, max_resultados=1)[0]
+        return _lista_textos(s["Errores"]), _texto(s["Texto"])
+
+    def editar_diagnostico(self, datos: dict) -> ResultadoAprendizaje:
+        """Reemplaza (retract + assertz + .pl) un diagnóstico aprendido."""
+        return self._aprendizaje(
+            f"editar_diagnostico({self.termino_diagnostico(datos)}, Estado, Mensajes)"
+        )
+
+    def editar_hallazgo(self, id_, nombre, grupo, pregunta, expresiones, autor) -> ResultadoAprendizaje:
+        """Reemplaza nombre, grupo, pregunta y expresiones de un hallazgo aprendido."""
+        termino = (
+            f"hallazgo({termino_atomo(id_)}, {termino_texto(nombre, 120)}, {termino_atomo(grupo)}, "
+            f"{termino_texto(pregunta, 300)}, {termino_lista_textos(expresiones)}, "
+            f"{termino_texto(autor, 80)})"
+        )
+        return self._aprendizaje(f"editar_hallazgo({termino}, Estado, Mensajes)")
+
+    def datos_diagnostico(self, id_: str) -> dict | None:
+        """Valores actuales de un diagnóstico aprendido (para el formulario de edición)."""
+        s = self.consultar(f"datos_diagnostico_aprendido({termino_atomo(id_)}, D)", max_resultados=1)
+        if not s:
+            return None
+        (nombre, especies, curso, requisitos, apoyo, minimo, certeza, severidad,
+         indicacion, excluye, excluido_por) = s[0]["D"]
+        return {
+            "id": id_, "nombre": _texto(nombre), "especies": _lista_textos(especies),
+            "curso": _texto(curso), "requisitos": _lista_textos(requisitos),
+            "apoyo": _lista_textos(apoyo), "minimo": int(minimo), "certeza": int(certeza),
+            "severidad": _texto(severidad), "indicacion": _texto(indicacion),
+            "excluye": _lista_textos(excluye), "excluido_por": _lista_textos(excluido_por),
+        }
+
+    def datos_hallazgo(self, id_: str) -> dict | None:
+        """Valores actuales de un hallazgo aprendido (para el formulario de edición)."""
+        s = self.consultar(f"datos_hallazgo_aprendido({termino_atomo(id_)}, D)", max_resultados=1)
+        if not s:
+            return None
+        nombre, grupo, pregunta, expresiones = s[0]["D"]
+        return {"id": id_, "nombre": _texto(nombre), "grupo": _texto(grupo),
+                "pregunta": _texto(pregunta), "expresiones": _lista_textos(expresiones)}
+
+    def catalogo_diagnosticos(self) -> list[DiagnosticoCatalogo]:
+        """Todos los diagnósticos, originales y aprendidos (catalogo_diagnosticos/1)."""
+        s = self.consultar("catalogo_diagnosticos(F)", max_resultados=1)[0]
+        return [
+            DiagnosticoCatalogo(_texto(i), _texto(n), _texto(o), _texto(sev), _texto(c),
+                                _lista_textos(r), _lista_textos(a), int(m), _lista_textos(es),
+                                _texto(au), _texto(fe))
+            for i, n, o, sev, c, r, a, m, es, au, fe in s["F"]
+        ]
+
+    def catalogo_hallazgos(self) -> list[HallazgoCatalogo]:
+        """Todos los hallazgos, originales y aprendidos (catalogo_hallazgos_completo/1)."""
+        s = self.consultar("catalogo_hallazgos_completo(F)", max_resultados=1)[0]
+        return [
+            HallazgoCatalogo(_texto(i), _texto(n), _texto(g), _texto(o), _texto(au), _texto(fe),
+                             _lista_textos(u), int(k))
+            for i, n, g, o, au, fe, u, k in s["F"]
+        ]
 
     def conocimiento_aprendido(self):
         """(diagnosticos, hallazgos, expresiones) aprendidos en Modo Experto."""

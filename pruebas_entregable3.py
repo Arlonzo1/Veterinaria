@@ -235,6 +235,50 @@ def prueba_persistencia(motor, salida, fallos) -> None:
     comprobar(fallos, [x.id for x in diags] == ["leptospirosis"], "la recarga no debe duplicar")
 
 
+def prueba_editar(motor, salida, fallos) -> None:
+    ruta = Path(ESTADO["copia"])
+    catalogo = {d.id: d.origen for d in motor.catalogo_diagnosticos()}
+    salida.append(f"Catálogo completo: {len(catalogo)} diagnósticos · parvovirosis={catalogo.get('parvovirosis')}"
+                  f" · leptospirosis={catalogo.get('leptospirosis')}")
+    comprobar(fallos, catalogo.get("parvovirosis") == "original" and catalogo.get("leptospirosis") == "aprendido",
+              "el catálogo debe distinguir originales y aprendidos")
+    hallazgos = {h.id: h for h in motor.catalogo_hallazgos()}
+    comprobar(fallos, "ictericia" in hallazgos and hallazgos["ictericia"].usado_por == ["leptospirosis"],
+              "el catálogo de hallazgos debe indicar quién usa ictericia")
+
+    datos = motor.datos_diagnostico("leptospirosis")
+    comprobar(fallos, datos is not None and datos["certeza"] == 60, "debe cargar los datos actuales")
+    datos.update(severidad="critico", certeza=70, especies=["perro", "gato"], autor="Dra. Edita")
+    d = motor.editar_diagnostico(datos)
+    salida.append(f"?- {d.consulta}.")
+    salida += [f"  {m}" for m in d.mensajes]
+    comprobar(fallos, d.ok, "el diagnóstico aprendido debe editarse")
+    nuevos = motor.datos_diagnostico("leptospirosis")
+    comprobar(fallos, nuevos["severidad"] == "critico" and nuevos["especies"] == ["perro", "gato"],
+              "los cambios deben quedar en memoria")
+    diags, _, _ = motor.conocimiento_aprendido()
+    comprobar(fallos, [x.id for x in diags] == ["leptospirosis"], "editar no debe duplicar")
+    comprobar(fallos, "severidad_base(leptospirosis, critico)." in seccion_13(ruta),
+              "los cambios deben quedar en el .pl")
+
+    original = motor.editar_diagnostico(dict(DIAGNOSTICO_NUEVO, id="parvovirosis"))
+    salida.append(f"Editar un diagnóstico original -> {original.mensajes}")
+    comprobar(fallos, not original.ok, "el conocimiento original no se edita")
+
+    h = motor.editar_hallazgo("ictericia", "Ictericia", "general", "¿Tiene las mucosas amarillas?",
+                              ["ojos amarillos", "mucosas amarillas"], "Dra. Edita")
+    salida.append(f"?- {h.consulta}.")
+    salida += [f"  {m}" for m in h.mensajes]
+    comprobar(fallos, h.ok, "el hallazgo aprendido debe editarse")
+    nueva = motor.interpretar("mi perro tiene las mucosas amarillas")
+    vieja = motor.interpretar("mi perro tiene la piel amarilla")
+    salida.append(f"«mucosas amarillas» -> {nueva.hallazgos} · «piel amarilla» -> {vieja.hallazgos}")
+    comprobar(fallos, "ictericia" in nueva.hallazgos, "la DCG debe reconocer la expresión nueva")
+    comprobar(fallos, "ictericia" not in vieja.hallazgos, "la expresión retirada ya no debe reconocerse")
+    r = motor.analizar_caso("perro", 36, "macho", ["ictericia", "fiebre"])
+    comprobar(fallos, r.ids[:1] == ["leptospirosis"], "el diagnóstico debe seguir funcionando")
+
+
 def prueba_olvidar(motor, salida, fallos) -> None:
     ruta = Path(ESTADO["copia"])
     bloqueado = motor.olvidar("hallazgo", "ictericia")
@@ -273,7 +317,10 @@ PRUEBAS = [
            prueba_aprender),
     Prueba("9", "Persistencia tras reiniciar",
            "Un proceso nuevo carga el .pl y conserva la regla aprendida.", prueba_persistencia),
-    Prueba("10", "Olvidar lo aprendido (retract/1 + .pl)",
+    Prueba("10", "Ver y editar lo aprendido (retract/1 + assertz/1 + .pl)",
+           "El catálogo distingue original y aprendido; lo aprendido se edita sin duplicarse.",
+           prueba_editar),
+    Prueba("11", "Olvidar lo aprendido (retract/1 + .pl)",
            "Se retira lo aprendido y el archivo vuelve a su estado original.", prueba_olvidar),
 ]
 

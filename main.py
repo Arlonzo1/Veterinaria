@@ -220,9 +220,20 @@ CSS = """
 # Recursos (se crean una sola vez por servidor)
 # ---------------------------------------------------------------------------
 
+def _version_motor() -> float:
+    """Fecha de modificación de motor.py: si el código cambia, se crea otro motor."""
+    return (Path(__file__).resolve().parent / "motor.py").stat().st_mtime
+
+
 @st.cache_resource(show_spinner="Cargando la base de conocimiento en SWI-Prolog…")
-def obtener_motor() -> MotorTriaVet:
+def _crear_motor(version: float) -> MotorTriaVet:  # version solo diferencia la caché
     return MotorTriaVet()
+
+
+def obtener_motor() -> MotorTriaVet:
+    # El motor se guarda en caché. Si se queda el de una versión anterior de
+    # motor.py, le faltan los métodos nuevos y aparece un AttributeError.
+    return _crear_motor(_version_motor())
 
 
 @st.cache_resource(show_spinner="Entrenando el clasificador de mediciones…")
@@ -867,7 +878,220 @@ def guardar_expresion() -> None:
 
 
 def olvidar(tipo: str, id_: str) -> None:
+    st.session_state.pop("confirmar_borrado", None)
+    if st.session_state.get("editando") == (tipo, id_):
+        st.session_state.editando = None
     _mostrar_resultado(obtener_motor().olvidar(tipo, id_))
+
+
+def pedir_confirmacion(tipo: str, id_: str) -> None:
+    st.session_state.confirmar_borrado = (tipo, id_)
+
+
+def cancelar_confirmacion() -> None:
+    st.session_state.pop("confirmar_borrado", None)
+
+
+# -- Edición de lo aprendido ------------------------------------------------
+
+def abrir_edicion_diagnostico(id_: str) -> None:
+    datos = obtener_motor().datos_diagnostico(id_)
+    if datos is None:
+        return
+    for campo in ("nombre", "especies", "curso", "requisitos", "apoyo", "minimo", "certeza",
+                  "severidad", "indicacion", "excluye", "excluido_por"):
+        st.session_state[f"ed_{campo}"] = datos[campo]
+    st.session_state.editando = ("diagnostico", id_)
+
+
+def abrir_edicion_hallazgo(id_: str) -> None:
+    datos = obtener_motor().datos_hallazgo(id_)
+    if datos is None:
+        return
+    st.session_state.eh_nombre = datos["nombre"]
+    st.session_state.eh_grupo = datos["grupo"]
+    st.session_state.eh_pregunta = datos["pregunta"]
+    st.session_state.eh_expresiones = "\n".join(datos["expresiones"])
+    st.session_state.editando = ("hallazgo", id_)
+
+
+def cerrar_edicion() -> None:
+    st.session_state.editando = None
+
+
+def datos_edicion_diagnostico(id_: str) -> dict:
+    e = st.session_state
+    return {
+        "id": id_, "nombre": e.get("ed_nombre", ""), "especies": e.get("ed_especies") or [],
+        "curso": e.get("ed_curso") or "agudo", "requisitos": e.get("ed_requisitos") or [],
+        "apoyo": e.get("ed_apoyo") or [], "minimo": e.get("ed_minimo", 0),
+        "severidad": e.get("ed_severidad", "medio"), "certeza": e.get("ed_certeza", 60),
+        "indicacion": e.get("ed_indicacion", ""), "excluye": e.get("ed_excluye") or [],
+        "excluido_por": e.get("ed_excluido_por") or [], "autor": e.get("autor") or "",
+    }
+
+
+def guardar_edicion_diagnostico(id_: str) -> None:
+    r = obtener_motor().editar_diagnostico(datos_edicion_diagnostico(id_))
+    _mostrar_resultado(r)
+    if r.ok:
+        st.session_state.editando = None
+
+
+def guardar_edicion_hallazgo(id_: str) -> None:
+    e = st.session_state
+    expresiones = [x.strip() for x in re.split(r"[\n;,]", e.get("eh_expresiones", "")) if x.strip()]
+    r = obtener_motor().editar_hallazgo(id_, e.get("eh_nombre", ""), e.get("eh_grupo", "general"),
+                                        e.get("eh_pregunta", ""), expresiones, e.get("autor") or "")
+    _mostrar_resultado(r)
+    if r.ok:
+        e.editando = None
+
+
+def botones_borrado(tipo: str, id_: str, columna, deshabilitado: bool = False,
+                    ayuda: str | None = None) -> None:
+    """Botón 🗑️ que pide confirmación antes de olvidar."""
+    if st.session_state.get("confirmar_borrado") == (tipo, id_):
+        columna.button("✔ Sí, eliminar", key=f"si_{tipo}_{id_}", type="primary",
+                       on_click=olvidar, args=(tipo, id_), width="stretch")
+        columna.button("Cancelar", key=f"no_{tipo}_{id_}", on_click=cancelar_confirmacion,
+                       width="stretch")
+    else:
+        columna.button("🗑️ Eliminar", key=f"del_{tipo}_{id_}", on_click=pedir_confirmacion,
+                       args=(tipo, id_), disabled=deshabilitado, help=ayuda, width="stretch")
+
+
+def formulario_edicion_diagnostico(motor: MotorTriaVet, id_: str, especies, hallazgos_todos,
+                                   diagnosticos, nombres) -> None:
+    st.markdown(f"##### ✏️ Editando `{id_}`")
+    st.text_input("Nombre del diagnóstico", key="ed_nombre")
+    a, b, c = st.columns(3)
+    a.multiselect("Especies", list(especies), key="ed_especies", format_func=especies.get)
+    b.segmented_control("Curso", ["agudo", "cronico"], key="ed_curso",
+                        format_func=lambda c: {"agudo": "Agudo", "cronico": "Crónico"}[c])
+    c.selectbox("Severidad base", ["bajo", "medio", "alto", "critico"], key="ed_severidad",
+                format_func=lambda n: ETIQUETA_NIVEL[n])
+    st.multiselect("Hallazgos obligatorios", hallazgos_todos, key="ed_requisitos",
+                   format_func=lambda h: nombre(h, nombres))
+    st.multiselect("Hallazgos de apoyo", hallazgos_todos, key="ed_apoyo",
+                   format_func=lambda h: nombre(h, nombres))
+    a, b = st.columns(2)
+    a.number_input("Mínimo de signos de apoyo", min_value=0, max_value=10, key="ed_minimo")
+    b.slider("Certeza base (%)", 10, 90, step=5, key="ed_certeza")
+    st.text_area("Indicación para el tutor", key="ed_indicacion", height=70)
+    otros = [d for d in diagnosticos if d != id_]
+    a, b = st.columns(2)
+    a.multiselect("Si se concluye, excluye a…", otros, key="ed_excluye", format_func=diagnosticos.get)
+    b.multiselect("Queda excluido por…", otros, key="ed_excluido_por", format_func=diagnosticos.get)
+
+    errores, texto = motor.vista_previa_edicion(datos_edicion_diagnostico(id_))
+    with st.expander("Vista previa de las cláusulas nuevas"):
+        st.code(texto or "% complete el formulario", language="prolog")
+    if errores:
+        st.caption("Validación de Prolog: " + " · ".join(errores))
+    a, b = st.columns(2)
+    a.button("💾 Guardar cambios", type="primary", disabled=bool(errores), key=f"gd_{id_}",
+             on_click=guardar_edicion_diagnostico, args=(id_,), width="stretch")
+    b.button("Cancelar", key=f"cd_{id_}", on_click=cerrar_edicion, width="stretch")
+
+
+def formulario_edicion_hallazgo(id_: str, grupos: dict[str, str]) -> None:
+    st.markdown(f"##### ✏️ Editando `{id_}`")
+    a, b = st.columns(2)
+    a.text_input("Nombre del hallazgo", key="eh_nombre")
+    b.selectbox("Grupo", list(grupos), key="eh_grupo", format_func=grupos.get)
+    st.text_input("Pregunta para el tutor", key="eh_pregunta")
+    st.text_area("Expresiones del tutor (una por línea; reemplazan a las actuales)",
+                 key="eh_expresiones", height=90)
+    a, b = st.columns(2)
+    a.button("💾 Guardar cambios", type="primary", key=f"gh_{id_}",
+             on_click=guardar_edicion_hallazgo, args=(id_,), width="stretch")
+    b.button("Cancelar", key=f"ch_{id_}", on_click=cerrar_edicion, width="stretch")
+
+
+def _coincide(busqueda: str, *textos: str) -> bool:
+    b = slug(busqueda)
+    return not b or any(b in slug(t) for t in textos)
+
+
+def panel_gestion(motor: MotorTriaVet, nombres, especies, hallazgos_todos, diagnosticos,
+                  grupos) -> None:
+    st.caption("Aquí ve todo el conocimiento de la base. El conocimiento **original** 🔒 es de solo "
+               "lectura; lo **aprendido** 🧠 en el Modo Experto se puede editar o eliminar, y cada "
+               "cambio se aplica en memoria y en la Sección 13 de base_conocimiento.pl.")
+    a, b = st.columns([3, 2])
+    busqueda = a.text_input("Buscar", key="gestion_buscar", placeholder="nombre o identificador")
+    origen = b.segmented_control("Mostrar", ["Todos", "Aprendidos", "Originales"],
+                                 default="Todos", key="gestion_origen") or "Todos"
+
+    def visible(aprendido: bool) -> bool:
+        return (origen == "Todos" or (origen == "Aprendidos") == aprendido)
+
+    editando = st.session_state.get("editando")
+    tab_d, tab_h, tab_e = st.tabs(["🩺 Diagnósticos", "🏷️ Hallazgos", "💬 Expresiones"])
+
+    with tab_d:
+        lista = [d for d in motor.catalogo_diagnosticos()
+                 if visible(d.aprendido) and _coincide(busqueda, d.nombre, d.id)]
+        st.caption(f"{len(lista)} diagnóstico(s)")
+        for d in lista:
+            with st.container(border=True):
+                c1, c2 = st.columns([4, 1])
+                marca = "🧠 Aprendido" if d.aprendido else "🔒 Original"
+                sp = ", ".join(especies.get(e, e) for e in d.especies) or "—"
+                c1.markdown(
+                    f"**{d.nombre}** · `{d.id}` · {marca}  \n"
+                    f"Severidad: {ETIQUETA_NIVEL.get(d.severidad, d.severidad)} · "
+                    f"Curso: {d.curso} · Especies: {sp}  \n"
+                    f"Obligatorios: {', '.join(nombre(h, nombres) for h in d.requisitos) or '—'}  \n"
+                    f"Apoyo (mín. {d.minimo}): {', '.join(nombre(h, nombres) for h in d.apoyo) or '—'}"
+                    + (f"  \n:gray[Enseñado por {d.autor} · {d.fecha}]" if d.aprendido else ""))
+                if d.aprendido:
+                    c2.button("✏️ Editar", key=f"ed_btn_{d.id}", on_click=abrir_edicion_diagnostico,
+                              args=(d.id,), width="stretch")
+                    botones_borrado("diagnostico", d.id, c2)
+                    if editando == ("diagnostico", d.id):
+                        formulario_edicion_diagnostico(motor, d.id, especies, hallazgos_todos,
+                                                       diagnosticos, nombres)
+                else:
+                    c2.caption("Solo lectura")
+
+    with tab_h:
+        lista = [h for h in motor.catalogo_hallazgos()
+                 if visible(h.aprendido) and _coincide(busqueda, h.nombre, h.id)]
+        st.caption(f"{len(lista)} hallazgo(s)")
+        for h in lista:
+            with st.container(border=True):
+                c1, c2 = st.columns([4, 1])
+                marca = "🧠 Aprendido" if h.aprendido else "🔒 Original"
+                usos = ", ".join(diagnosticos.get(x, x) for x in h.usado_por) or "ningún diagnóstico"
+                c1.markdown(
+                    f"**{h.nombre}** · `{h.id}` · {marca}  \n"
+                    f"Grupo: {grupos.get(h.grupo, h.grupo)} · Expresiones: {h.expresiones} · "
+                    f"Lo usa: {usos}"
+                    + (f"  \n:gray[Enseñado por {h.autor} · {h.fecha}]" if h.aprendido else ""))
+                if h.aprendido:
+                    c2.button("✏️ Editar", key=f"eh_btn_{h.id}", on_click=abrir_edicion_hallazgo,
+                              args=(h.id,), width="stretch")
+                    en_uso = bool(h.usado_por)
+                    botones_borrado("hallazgo", h.id, c2, deshabilitado=en_uso,
+                                    ayuda="Primero quítelo de los diagnósticos que lo usan."
+                                    if en_uso else None)
+                    if editando == ("hallazgo", h.id):
+                        formulario_edicion_hallazgo(h.id, grupos)
+                else:
+                    c2.caption("Solo lectura")
+
+    with tab_e:
+        _, _, expresiones = motor.conocimiento_aprendido()
+        lista = [x for x in expresiones if _coincide(busqueda, x[0], x[1], nombre(x[1], nombres))]
+        st.caption(f"{len(lista)} expresión(es) aprendida(s). Las del léxico original no se eliminan.")
+        if not lista:
+            st.info("No hay expresiones aprendidas que coincidan.")
+        for texto, h, autor, fecha in lista:
+            c1, c2 = st.columns([4, 1])
+            c1.markdown(f"💬 «{texto}» → **{nombre(h, nombres)}** · :gray[{autor} · {fecha}]")
+            botones_borrado("expresion", texto, c2)
 
 
 def panel_experto(motor: MotorTriaVet, catalogo, nombres, especies) -> None:
@@ -897,9 +1121,12 @@ def panel_experto(motor: MotorTriaVet, catalogo, nombres, especies) -> None:
     diagnosticos = motor.nombres_diagnosticos()
     grupos = {g: n for g, n, _ in catalogo}
 
-    nuevo_diag, nuevo_hallazgo, expresion, aprendido = st.tabs(
+    nuevo_diag, nuevo_hallazgo, expresion, gestion, aprendido = st.tabs(
         ["➕ Nuevo diagnóstico", "🏷️ Nuevo hallazgo", "💬 Enseñar una expresión",
-         "📚 Lo aprendido y su persistencia"])
+         "🗂️ Ver, editar y eliminar", "📚 Lo aprendido y su persistencia"])
+
+    with gestion:
+        panel_gestion(motor, nombres, especies, hallazgos_todos, diagnosticos, grupos)
 
     with nuevo_diag:
         st.caption("Defina el perfil clínico. Prolog lo concluirá cuando un caso tenga todos los "
@@ -974,22 +1201,7 @@ def panel_experto(motor: MotorTriaVet, catalogo, nombres, especies) -> None:
         m1.metric("Diagnósticos aprendidos", len(diags))
         m2.metric("Hallazgos aprendidos", len(hallazgos))
         m3.metric("Expresiones aprendidas", len(expresiones))
-        for d in diags:
-            with st.container(border=True):
-                c1, c2 = st.columns([5, 1])
-                c1.markdown(f"**{d.nombre}** · `{d.id}` · {ETIQUETA_NIVEL.get(d.severidad, d.severidad)}  \n"
-                            f"Obligatorios: {', '.join(nombre(h, nombres) for h in d.requisitos) or '—'} · "
-                            f"Apoyo (mín. {d.minimo}): {', '.join(nombre(h, nombres) for h in d.apoyo) or '—'}  \n"
-                            f":gray[Enseñado por {d.autor} · {d.fecha}]")
-                c2.button("🗑️ Olvidar", key=f"olv_d_{d.id}", on_click=olvidar, args=("diagnostico", d.id))
-        for h_id, h_nombre, grupo, autor, fecha in hallazgos:
-            c1, c2 = st.columns([5, 1])
-            c1.markdown(f"🏷️ **{h_nombre}** · `{h_id}` · {grupos.get(grupo, grupo)} · :gray[{autor} · {fecha}]")
-            c2.button("🗑️", key=f"olv_h_{h_id}", on_click=olvidar, args=("hallazgo", h_id))
-        for texto, h, autor, fecha in expresiones:
-            c1, c2 = st.columns([5, 1])
-            c1.markdown(f"💬 «{texto}» → {nombre(h, nombres)} · :gray[{autor} · {fecha}]")
-            c2.button("🗑️", key=f"olv_e_{texto}", on_click=olvidar, args=("expresion", texto))
+        st.caption("Para editar o eliminar lo aprendido use la pestaña «🗂️ Ver, editar y eliminar».")
 
         st.divider()
         st.markdown("#### 💾 Prueba de persistencia")
