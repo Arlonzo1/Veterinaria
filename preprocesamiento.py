@@ -59,12 +59,15 @@ def _rejilla(tramos: list[tuple[float, float, str]], paso: float) -> list[tuple[
     return datos
 
 
-_TEMP = [(34.0, 37.5, "hipotermia"), (37.5, 39.3, "normal"), (39.3, 42.5, "fiebre")]
-_TEMP_GATO = [(34.0, 37.7, "hipotermia"), (37.7, 39.3, "normal"), (39.3, 42.5, "fiebre")]
+_TEMP = [(30.0, 37.5, "hipotermia"), (37.5, 39.3, "normal"), (39.3, 45.1, "fiebre")]
+_TEMP_GATO = [(30.0, 37.7, "hipotermia"), (37.7, 39.3, "normal"), (39.3, 45.1, "fiebre")]
+# Los límites (minimo, maximo) de cada variable coinciden con rango_plausible/5
+# de base_conocimiento.pl (Sección 14): un valor fuera de ellos es una
+# medición imposible y Prolog la señala como contradicción.
 
 VARIABLES: dict[str, Variable] = {
     "temperatura": Variable(
-        "temperatura", "Temperatura rectal", "°C", 34.0, 42.5, 0.1,
+        "temperatura", "Temperatura rectal", "°C", 30.0, 45.0, 0.1,
         {"perro": _rejilla(_TEMP, 0.1), "gato": _rejilla(_TEMP_GATO, 0.1)},
         {"hipotermia": "hipotermia", "normal": None, "fiebre": "fiebre"},
         {"perro": [(37.5, "hipotermia"), (39.3, "normal"), (99, "fiebre")],

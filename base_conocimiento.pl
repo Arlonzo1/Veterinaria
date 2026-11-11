@@ -73,7 +73,8 @@
     signo/2, antecedente/2, nombre_hallazgo/2, pregunta/2,
     nombre_diagnostico/2, especie_afectada/2, curso/2,
     requisito/2, apoyo/2, minimo_apoyo/2, certeza_base/2,
-    severidad_base/2, indicacion/2, excluye/2.
+    severidad_base/2, indicacion/2, excluye/2,
+    diagnostico_aprendido/3, hallazgo_aprendido/3, expresion_aprendida/4.
 
 %   Ruta de este archivo: la usa la Sección 12 para escribir lo aprendido.
 :- dynamic archivo_base/1.
@@ -405,6 +406,8 @@ recomendacion(indeterminado,
     'SIN HALLAZGOS VÁLIDOS: no es posible orientar el caso; revise los signos ingresados.').
 recomendacion(datos_invalidos,
     'DATOS DEL PACIENTE NO VÁLIDOS: revise la especie (perro/gato), la edad en meses (0-300) y el sexo (macho/hembra).').
+recomendacion(inconsistente,
+    'DATOS CONTRADICTORIOS: el sistema no emite un diagnóstico porque los hechos ingresados son lógicamente incompatibles. Corrija los datos señalados y vuelva a analizar.').
 
 /* ---------------------------------------------------------------------------
    1.13 Indicaciones mientras se consigue atención veterinaria
@@ -1086,7 +1089,8 @@ catalogo_hallazgos(Grupo, Hallazgos) :-
 %   CORTE + FALLBACK: si los datos del paciente no son válidos se devuelve []
 %   en lugar de fallar, para que Python nunca reciba un error.
 diagnosticar_todos(Especie, Edad, Sexo, Entrada, Diagnosticos) :-
-    preparar_caso(Especie, Edad, Sexo, Entrada, Caso, _), !,
+    preparar_caso(Especie, Edad, Sexo, Entrada, Caso, _),
+    caso_consistente(Caso), !,
     conclusiones(Caso, Diagnosticos).
 diagnosticar_todos(_, _, _, _, []).
 
@@ -1096,14 +1100,16 @@ diagnosticar_todos(_, _, _, _, []).
 %   Consulta completa invocada desde Python en una sola llamada.
 %   CORTE + FALLBACK: si la entrada o los datos del paciente no son válidos
 %   se responde con la prioridad datos_invalidos, sin lanzar errores.
+%   Entregable 4: antes de diagnosticar se buscan contradicciones
+%   (Sección 14). Si las hay, dictamen/4 bloquea el diagnóstico.
 analizar_caso(Especie, Edad, Sexo, Entrada,
               Validos, Ignorados, Alarmas, Diagnosticos, Prioridad, Recomendacion) :-
     preparar_caso(Especie, Edad, Sexo, Entrada, Caso, Ignorados), !,
     Caso = caso(_, _, _, Validos),
     alarmas_presentes(Caso, Alarmas),
-    diagnosticos_detallados(Caso, Diagnosticos),
-    prioridad_caso(Caso, Diagnosticos, Prioridad),
-    recomendacion(Prioridad, Recomendacion).
+    contradicciones_caso(Caso, Contradicciones),
+    dictamen(Caso, Contradicciones, Diagnosticos, Prioridad),
+    recomendacion_caso(Prioridad, Contradicciones, Alarmas, Recomendacion).
 analizar_caso(_, _, _, Entrada, [], Ignorados, [], [], datos_invalidos, Recomendacion) :-
     entrada_como_lista(Entrada, Ignorados),
     recomendacion(datos_invalidos, Recomendacion).
@@ -2087,7 +2093,11 @@ nombre_rol(alternativa, 'Requisito (basta uno de ellos) de').
 nombre_rol(minimo,      'Signo de apoyo que falta para el mínimo de').
 nombre_rol(refuerzo,    'Signo de apoyo que refuerza').
 
-incompatibles(vacunacion_completa, vacunacion_incompleta).
+%   Los pares incompatibles se definen una sola vez, con su motivo, en la
+%   Sección 14 (incompatibilidad/3): así el módulo de recomendación no
+%   pregunta por un hallazgo que contradice el caso.
+incompatibles(A, B) :-
+    incompatibilidad(A, B, _).
 
 % Signos digestivos
 pregunta(vomito,                 '¿Ha vomitado en las últimas horas?').
@@ -2591,7 +2601,8 @@ exportar_competidora(Caso, Competidoras, comp(D, Estado, Activacion, Coincidenci
 %   [Id, Nombre, Arbol, Reglas, Hechos, Datos, Severidad, Certeza]
 %   CORTE + FALLBACK: con datos no válidos devuelve [].
 explicar_caso(Especie, Edad, Sexo, Entrada, Explicaciones) :-
-    preparar_caso(Especie, Edad, Sexo, Entrada, Caso, _), !,
+    preparar_caso(Especie, Edad, Sexo, Entrada, Caso, _),
+    caso_consistente(Caso), !,
     diagnosticos_detallados(Caso, Detalles),
     findall(Explicacion,
             ( member([D|_], Detalles),
@@ -2605,7 +2616,8 @@ explicar_caso(_, _, _, _, []).
 %   [Id, Nombre, Tipo, Resumen, Compartidos, Arbol]
 %   CORTE + FALLBACK: con datos no válidos devuelve [].
 hipotesis_descartadas(Especie, Edad, Sexo, Entrada, Descartadas) :-
-    preparar_caso(Especie, Edad, Sexo, Entrada, Caso, _), !,
+    preparar_caso(Especie, Edad, Sexo, Entrada, Caso, _),
+    caso_consistente(Caso), !,
     findall(Par, descartada(Caso, Par), Pares),
     sort(1, @>=, Pares, Ordenados),
     pares_valores(Ordenados, Descartadas).
@@ -2619,6 +2631,11 @@ hipotesis_descartadas(_, _, _, _, []).
 %     Sugerencias  = preguntas ordenadas por peso (ver exportar_sugerencia/3)
 %   Negados: hallazgos que el usuario respondió que NO presenta.
 %   CORTE + FALLBACK: con datos no válidos responde datos_invalidos.
+%   Entregable 4: con datos contradictorios (incluido un hallazgo que el
+%   usuario afirma y niega) no se sugiere nada hasta que se corrijan.
+que_falta(Especie, Edad, Sexo, Entrada, Negados,
+          [inconsistente, si, Mensaje], [], []) :-
+    verificar_consistencia(Especie, Edad, Sexo, Entrada, Negados, [_|_], Mensaje), !.
 que_falta(Especie, Edad, Sexo, Entrada, Negados0,
           [Tipo, Activo, Mensaje], Competidoras, Sugerencias) :-
     preparar_caso(Especie, Edad, Sexo, Entrada, Caso, _), !,
@@ -3083,10 +3100,14 @@ sin_tilde('ó', o).  sin_tilde('ú', u).  sin_tilde('ü', u).
 %!  palabra_token(+Parte, -Token) is semidet.
 %   Quita puntos sobrantes ("fiebre." -> fiebre) y convierte los números.
 %   Falla con las partes vacías, que convlist/3 descarta.
+%   Entregable 4 (hallazgo de la prueba de estrés E4-8): un número absurdo
+%   como 999999999999999999999 se queda como palabra. Si fuera un entero
+%   gigante, PySwip no podría devolverlo a Python y la consulta fallaría.
 palabra_token(Parte, Token) :-
     split_string(Parte, "", ".", [Recortada]),
     Recortada \== "",
-    (   number_string(Numero, Recortada)
+    (   catch(number_string(Numero, Recortada), _, fail),
+        abs(Numero) =< 1000000
     ->  Token = Numero
     ;   atom_string(Token, Recortada)
     ).
@@ -3185,11 +3206,18 @@ fragmento(desconocida, Palabra)        --> [Palabra].
 
 %   Mediciones numéricas: Python las convierte en hechos discretos
 %   (preprocesamiento.py) antes de enviarlas al motor.
+%   Entregable 4: con la palabra "temperatura" o la unidad "grados" el número
+%   se acepta aunque sea imposible (55 grados); la Sección 14 lo señala como
+%   medición imposible en vez de ignorarlo en silencio. Con "fiebre" se
+%   exige el rango, porque "fiebre de 4 días" habla de duración.
 medicion(temperatura, T) -->
-    [P], { coincide_texto("temperatura", P) ; coincide_texto("fiebre", P) },
+    [P], { coincide_texto("temperatura", P) },
+    relleno_corto, numero(T).
+medicion(temperatura, T) -->
+    [P], { coincide_texto("fiebre", P) },
     relleno_corto, numero(T), { T >= 30, T =< 45 }.
 medicion(temperatura, T) -->
-    numero(T), { T >= 30, T =< 45 },
+    numero(T),
     [U], { memberchk(U, [grados, grado, c, centigrados]) }.
 medicion(vomitos_24h, N) -->
     [P], { coincide_texto("vomit*", P) }, relleno_corto,
@@ -3326,9 +3354,29 @@ oracion(Palabras, Texto) :-
 %     Fragmentos    [[Tipo, Valor, Texto], ...] en el orden de la oración
 %     Resumen       oración generada con resumen//5 (camino inverso)
 %   Valida la entrada: debe ser un texto sin variables (ground/1).
-%   CORTE + FALLBACK: si el texto no es válido se devuelve un análisis vacío.
+%   Versión del Entregable 3: un hallazgo afirmado y negado en el mismo
+%   texto se queda solo como afirmado y no se informa ninguna contradicción.
 interpretar_texto(Texto, Especie, Edad, Sexo, Hallazgos, Negados,
                   Mediciones, Desconocidas, Fragmentos, Resumen) :-
+    interpretar_texto(Texto, Especie, Edad, Sexo, Hallazgos, Negados0,
+                      Mediciones, Desconocidas, Fragmentos, _, _),
+    subtract(Negados0, Hallazgos, Negados),
+    phrase(resumen(Especie, Edad, Sexo, Hallazgos, Negados), PalabrasResumen),
+    oracion(PalabrasResumen, Resumen).
+
+%!  interpretar_texto(+Texto, -Especie, -Edad, -Sexo, -Hallazgos, -Negados,
+%!                    -Mediciones, -Desconocidas, -Fragmentos, -Resumen,
+%!                    -Contradicciones) is det.
+%   API PARA PYTHON (Entregable 4). Igual que interpretar_texto/10, pero:
+%     Negados          incluye también lo que el texto afirma en otra parte,
+%                      para que la contradicción no se resuelva en silencio;
+%     Mediciones       solo las que están dentro del rango plausible;
+%     Contradicciones  [[Tipo, Elementos, Motivo], ...] encontradas en el
+%                      texto (Sección 14): afirmado_y_negado,
+%                      medicion_repetida y medicion_imposible.
+%   CORTE + FALLBACK: si el texto no es válido se devuelve un análisis vacío.
+interpretar_texto(Texto, Especie, Edad, Sexo, Hallazgos, Negados,
+                  Mediciones, Desconocidas, Fragmentos, Resumen, Contradicciones) :-
     ground(Texto),
     ( atom(Texto) ; string(Texto) ), !,
     texto_a_palabras(Texto, Palabras),
@@ -3338,17 +3386,19 @@ interpretar_texto(Texto, Especie, Edad, Sexo, Hallazgos, Negados,
     primer_valor(Fs, sexo, Sexo),
     findall(H, ( member(f(hallazgo, H, _), Fs), hallazgo_valido(H) ), Hs0),
     sort(Hs0, Hallazgos),
-    findall(H, ( member(f(negado, L, _), Fs), member(H, L),
-                 hallazgo_valido(H), \+ memberchk(H, Hallazgos) ), Ns0),
+    findall(H, ( member(f(negado, L, _), Fs), member(H, L), hallazgo_valido(H) ), Ns0),
     sort(Ns0, Negados),
-    findall([V, X], member(f(medicion, [V, X], _), Fs), Mediciones),
+    findall([V, X], member(f(medicion, [V, X], _), Fs), Todas),
+    include(medicion_plausible, Todas, Mediciones),
     findall(P, ( member(f(desconocida, P, _), Fs), atom(P) ), Ds0),
     list_to_set(Ds0, Desconocidas),
     maplist(exportar_fragmento, Fs, Fragmentos),
     phrase(resumen(Especie, Edad, Sexo, Hallazgos, Negados), PalabrasResumen),
-    oracion(PalabrasResumen, Resumen).
+    oracion(PalabrasResumen, Resumen),
+    contradicciones_texto(Hallazgos, Negados, Todas, Cs),
+    maplist(exportar_contradiccion, Cs, Contradicciones).
 interpretar_texto(_, no_indicado, no_indicado, no_indicado, [], [], [], [], [],
-                  'No se recibió un texto para interpretar.').
+                  'No se recibió un texto para interpretar.', []).
 
 %!  primer_valor(+Fragmentos, +Dato, -Valor) is det.
 %   Primer valor de especie, sexo o edad mencionado en el texto.
@@ -3412,16 +3462,29 @@ texto_no_vacio(Texto) :-
 %!  errores_diagnostico(+Datos, -Errores) is det.
 %   Lista de problemas del diagnóstico propuesto ([] si es válido).
 errores_diagnostico(Datos, Errores) :-
-    findall(Mensaje, error_diagnostico(Datos, Mensaje), Errores).
+    errores_diagnostico(nuevo, Datos, Errores).
+
+%!  errores_diagnostico(+Modo, +Datos, -Errores) is det.
+%   Modo = nuevo | edicion. Al crear, el identificador no debe existir; al
+%   editar, debe ser un diagnóstico aprendido (el original no se edita).
+errores_diagnostico(Modo, Datos, Errores) :-
+    findall(Mensaje,
+            ( error_diagnostico(Datos, Mensaje)
+            ; error_id_diagnostico(Modo, Datos, Mensaje) ),
+            Errores).
+
+error_id_diagnostico(nuevo, diagnostico(Id, _, _, _, _, _, _, _, _, _, _, _, _), Mensaje) :-
+    nombre_diagnostico(Id, Nombre),
+    format(atom(Mensaje), 'Ya existe un diagnóstico con el identificador «~w» (~w).', [Id, Nombre]).
+error_id_diagnostico(edicion, diagnostico(Id, _, _, _, _, _, _, _, _, _, _, _, _), Mensaje) :-
+    \+ diagnostico_aprendido(Id, _, _),
+    format(atom(Mensaje), '«~w» no es un diagnóstico aprendido: el conocimiento original no se edita.', [Id]).
 
 error_diagnostico(Datos, 'Los datos contienen variables libres.') :-
     \+ ground(Datos).
 error_diagnostico(diagnostico(Id, _, _, _, _, _, _, _, _, _, _, _, _),
                   'El identificador debe usar solo letras minúsculas, números y guion bajo.') :-
     \+ identificador_valido(Id).
-error_diagnostico(diagnostico(Id, _, _, _, _, _, _, _, _, _, _, _, _), Mensaje) :-
-    nombre_diagnostico(Id, Nombre),
-    format(atom(Mensaje), 'Ya existe un diagnóstico con el identificador «~w» (~w).', [Id, Nombre]).
 error_diagnostico(diagnostico(_, Nombre, _, _, _, _, _, _, _, _, _, _, _),
                   'Escriba el nombre del diagnóstico.') :-
     \+ texto_no_vacio(Nombre).
@@ -3550,7 +3613,7 @@ aprender_diagnostico(Datos, ok, [Mensaje]) :-
 %   Agrega un signo (o antecedente) nuevo, su pregunta para el módulo
 %   "¿Qué falta?" y las expresiones con que la DCG lo reconocerá.
 aprender_hallazgo(Datos, error, Errores) :-
-    findall(M, error_hallazgo(Datos, M), Errores),
+    findall(M, ( error_hallazgo(Datos, M) ; error_id_hallazgo(nuevo, Datos, M) ), Errores),
     Errores \== [], !.
 aprender_hallazgo(hallazgo(Id, Nombre, Grupo, Pregunta, Expresiones, Autor), ok, [Mensaje]) :-
     fecha_actual(Fecha),
@@ -3575,9 +3638,6 @@ error_hallazgo(Datos, 'Los datos contienen variables libres.') :-
 error_hallazgo(hallazgo(Id, _, _, _, _, _),
                'El identificador debe usar solo letras minúsculas, números y guion bajo.') :-
     \+ identificador_valido(Id).
-error_hallazgo(hallazgo(Id, _, _, _, _, _), Mensaje) :-
-    hallazgo_valido(Id),
-    format(atom(Mensaje), 'Ya existe el hallazgo «~w».', [Id]).
 error_hallazgo(hallazgo(_, Nombre, _, _, _, _), 'Escriba el nombre del hallazgo.') :-
     \+ texto_no_vacio(Nombre).
 error_hallazgo(hallazgo(_, _, Grupo, _, _, _), 'Elija un grupo válido.') :-
@@ -3589,6 +3649,14 @@ error_hallazgo(hallazgo(_, _, _, _, Expresiones, _),
     \+ ( is_list(Expresiones), member(E, Expresiones), texto_no_vacio(E) ).
 error_hallazgo(hallazgo(_, _, _, _, _, Autor), 'Escriba el nombre del experto.') :-
     \+ texto_no_vacio(Autor).
+
+%   Al crear, el hallazgo no debe existir; al editar, debe ser aprendido.
+error_id_hallazgo(nuevo, hallazgo(Id, _, _, _, _, _), Mensaje) :-
+    hallazgo_valido(Id),
+    format(atom(Mensaje), 'Ya existe el hallazgo «~w».', [Id]).
+error_id_hallazgo(edicion, hallazgo(Id, _, _, _, _, _), Mensaje) :-
+    \+ hallazgo_aprendido(Id, _, _),
+    format(atom(Mensaje), '«~w» no es un hallazgo aprendido: el conocimiento original no se edita.', [Id]).
 
 %!  aprender_expresion(+Texto, +Hallazgo, +Autor, -Estado, -Mensajes) is det.
 %   API PARA PYTHON. Enseña a la DCG una forma nueva de decir un hallazgo
@@ -3650,6 +3718,94 @@ olvidar(expresion, Texto, ok, [Mensaje]) :-
     format(atom(Mensaje), 'Se olvidó la expresión «~w».', [Texto]).
 olvidar(_, Id, error, [Mensaje]) :-
     format(atom(Mensaje), '«~w» no es conocimiento aprendido en Modo Experto.', [Id]).
+
+/* ---------------------------------------------------------------------------
+   12.4b Editar lo aprendido (retract/1 + assertz/1 + escritura persistente)
+   Se validan los datos nuevos; si son válidos, se retiran las cláusulas
+   viejas del elemento y se inyectan las nuevas. El identificador no cambia,
+   así que los diagnósticos que usan un hallazgo editado no se rompen.
+   --------------------------------------------------------------------------- */
+
+%!  editar_diagnostico(+Datos, -Estado, -Mensajes) is det.
+%   API PARA PYTHON. Datos con el mismo formato que aprender_diagnostico/3.
+%   CORTE: con errores no se toca la memoria ni el archivo.
+editar_diagnostico(Datos, error, Errores) :-
+    errores_diagnostico(edicion, Datos, Errores),
+    Errores \== [], !.
+editar_diagnostico(Datos, ok, [Mensaje]) :-
+    arg(1, Datos, Id),
+    arg(2, Datos, Nombre),
+    forall(clausula_de_diagnostico(Id, C), retract(C)),
+    fecha_actual(Fecha),
+    clausulas_diagnostico(Datos, Fecha, Clausulas),
+    forall(member(C, Clausulas), assertz(C)),
+    persistir_conocimiento,
+    format(atom(Mensaje), 'Se actualizó el diagnóstico «~w» (~w).', [Nombre, Id]).
+
+%!  vista_previa_edicion(+Datos, -Errores, -Texto) is det.
+%   API PARA PYTHON. Como vista_previa_diagnostico/3, pero valida en modo edición.
+vista_previa_edicion(Datos, Errores, Texto) :-
+    errores_diagnostico(edicion, Datos, Errores),
+    (   ground(Datos)
+    ->  catch(( clausulas_diagnostico(Datos, 'AAAA-MM-DD hh:mm', Clausulas),
+                texto_clausulas(Clausulas, Texto) ),
+              _, Texto = '')
+    ;   Texto = ''
+    ).
+
+%!  editar_hallazgo(+Datos, -Estado, -Mensajes) is det.
+%   API PARA PYTHON. Datos = hallazgo(Id, Nombre, Grupo, Pregunta, Expresiones, Autor)
+%   Las expresiones enviadas reemplazan a todas las que tenía el hallazgo.
+editar_hallazgo(Datos, error, Errores) :-
+    findall(M, ( error_hallazgo(Datos, M) ; error_id_hallazgo(edicion, Datos, M) ), Errores),
+    Errores \== [], !.
+editar_hallazgo(hallazgo(Id, Nombre, Grupo, Pregunta, Expresiones, Autor), ok, [Mensaje]) :-
+    forall(clausula_de_hallazgo(Id, C), retract(C)),
+    fecha_actual(Fecha),
+    (   sistema_organico(Grupo)
+    ->  Tipo = signo(Id, Grupo)
+    ;   Tipo = antecedente(Id, Grupo)
+    ),
+    findall(expresion_aprendida(E, Id, Autor, Fecha), member(E, Expresiones), Lexico),
+    Clausulas = [ hallazgo_aprendido(Id, Autor, Fecha), Tipo,
+                  nombre_hallazgo(Id, Nombre), pregunta(Id, Pregunta) | Lexico ],
+    forall(member(C, Clausulas), assertz(C)),
+    compilar_lexico,
+    persistir_conocimiento,
+    format(atom(Mensaje), 'Se actualizó el hallazgo «~w» (~w).', [Nombre, Id]).
+
+%!  datos_diagnostico_aprendido(+Id, -Datos) is semidet.
+%   API PARA PYTHON. Los valores actuales de un diagnóstico aprendido, para
+%   cargarlos en el formulario de edición:
+%     [Nombre, Especies, Curso, Requisitos, Apoyo, Minimo, CertezaPct,
+%      Severidad, Indicacion, Excluye, ExcluidoPor]
+datos_diagnostico_aprendido(Id, [Nombre, Especies, Curso, Requisitos, Apoyo, Minimo,
+                                 CertezaPct, Severidad, Indicacion, Excluye, ExcluidoPor]) :-
+    diagnostico_aprendido(Id, _, _),
+    nombre_diagnostico(Id, Nombre),
+    findall(E, especie_afectada(Id, E), Especies),
+    once(curso(Id, Curso)),
+    once(requisito(Id, Requisitos)),
+    once(apoyo(Id, Apoyo)),
+    once(minimo_apoyo(Id, Minimo)),
+    once(certeza_base(Id, Base)),
+    CertezaPct is round(Base * 100),
+    once(severidad_base(Id, Severidad)),
+    once(indicacion(Id, Indicacion)),
+    findall(D, excluye(Id, D), Excluye),
+    findall(D, excluye(D, Id), ExcluidoPor).
+
+%!  datos_hallazgo_aprendido(+Id, -Datos) is semidet.
+%   API PARA PYTHON. [Nombre, Grupo, Pregunta, Expresiones] de un hallazgo aprendido.
+datos_hallazgo_aprendido(Id, [Nombre, Grupo, Pregunta, Expresiones]) :-
+    hallazgo_aprendido(Id, _, _),
+    nombre_hallazgo(Id, Nombre),
+    once(grupo_hallazgo(Id, Grupo)),
+    (   pregunta(Id, Pregunta)
+    ->  true
+    ;   Pregunta = ''
+    ),
+    findall(T, expresion_aprendida(T, Id, _, _), Expresiones).
 
 usado_por(Hallazgo, Diagnostico) :-
     ( requisito(Diagnostico, L) ; apoyo(Diagnostico, L) ),
@@ -3760,6 +3916,48 @@ conocimiento_aprendido(Diagnosticos, Hallazgos, Expresiones) :-
             Hallazgos),
     findall([T, H, Autor, Fecha], expresion_aprendida(T, H, Autor, Fecha), Expresiones).
 
+%!  catalogo_diagnosticos(-Filas) is det.
+%   API PARA PYTHON. TODOS los diagnósticos (originales y aprendidos):
+%     [[Id, Nombre, Origen, Severidad, Curso, Requisitos, Apoyo, Minimo, Especies, Autor, Fecha]]
+%   Origen = original | aprendido. Solo los aprendidos se editan o eliminan.
+catalogo_diagnosticos(Filas) :-
+    findall([Id, Nombre, Origen, S, C, R, A, M, Es, Autor, Fecha],
+            ( diagnostico_del_catalogo(Id),
+              nombre_diagnostico(Id, Nombre),
+              origen_diagnostico(Id, Origen, Autor, Fecha),
+              valor_o(severidad_base(Id, S), S, indeterminado),
+              valor_o(curso(Id, C), C, agudo),
+              valor_o(requisito(Id, R), R, []),
+              valor_o(apoyo(Id, A), A, []),
+              valor_o(minimo_apoyo(Id, M), M, 0),
+              findall(E, especie_afectada(Id, E), Es) ),
+            Filas).
+
+%!  catalogo_hallazgos_completo(-Filas) is det.
+%   API PARA PYTHON. TODOS los hallazgos (originales y aprendidos):
+%     [[Id, Nombre, Grupo, Origen, Autor, Fecha, UsadoPor, NumExpresiones]]
+catalogo_hallazgos_completo(Filas) :-
+    findall([Id, Nombre, Grupo, Origen, Autor, Fecha, UsadoPor, N],
+            ( nombre_hallazgo(Id, Nombre),
+              once(grupo_hallazgo(Id, Grupo)),
+              (   hallazgo_aprendido(Id, Autor, Fecha)
+              ->  Origen = aprendido
+              ;   Origen = original, Autor = '', Fecha = ''
+              ),
+              findall(D, ( usado_por(Id, D), diagnostico_del_catalogo(D) ), Ds),
+              sort(Ds, UsadoPor),
+              aggregate_all(count, expresion_del_lexico(_, Id), N) ),
+            Filas).
+
+origen_diagnostico(Id, aprendido, Autor, Fecha) :-
+    diagnostico_aprendido(Id, Autor, Fecha), !.
+origen_diagnostico(_, original, '', '').
+
+%   CORTE: toma el primer valor; si no hay, usa el valor por defecto.
+valor_o(Meta, _, _) :-
+    call(Meta), !.
+valor_o(_, Valor, Valor).
+
 %!  texto_aprendido(-Texto) is det.
 %   API PARA PYTHON. Lo aprendido tal como está en memoria, en sintaxis
 %   Prolog (para compararlo con lo escrito en el archivo).
@@ -3767,6 +3965,191 @@ texto_aprendido(Texto) :-
     with_output_to(atom(Texto), ( current_output(Salida), escribir_aprendido(Salida) )).
 
 :- initialization(compilar_lexico).
+
+
+/*  ===========================================================================
+    SECCIÓN 14. CONSISTENCIA DEL CASO Y MANEJO DE CONTRADICCIONES [Entregable 4]
+    (Está antes de la Sección 13 porque esa sección debe ser la última del
+    archivo: el Modo Experto reescribe todo lo que hay debajo de su marca.)
+
+    Antes de emitir un diagnóstico, el motor revisa que los hechos no sean
+    lógicamente incompatibles. Si lo son, BLOQUEA el diagnóstico (dictamen/4)
+    y explica qué datos chocan, en vez de razonar sobre datos imposibles.
+
+    Contradicciones que se detectan:
+      hallazgos_incompatibles  dos hallazgos que no pueden darse a la vez
+                               (fiebre + hipotermia, encías pálidas + rojas...)
+      dato_paciente            un hallazgo imposible para el paciente
+                               (macho gestante, hembra demasiado joven)
+      afirmado_y_negado        el usuario afirma y niega el mismo hallazgo
+                               ("tiene fiebre ... no tiene fiebre", o mide
+                               40 °C y responde que no tiene fiebre)
+      medicion_repetida        el texto da dos valores distintos de la misma
+                               medición ("40 grados ... 36 grados")
+      medicion_imposible       un valor fuera del rango plausible (55 grados)
+
+    Cada contradicción es contradiccion(Tipo, Elementos, Motivo).
+    =========================================================================== */
+
+/* ---------------------------------------------------------------------------
+   14.1 Hechos del dominio
+   incompatibilidad(?HallazgoA, ?HallazgoB, ?Motivo)
+   rango_plausible(?Variable, ?Nombre, ?Minimo, ?Maximo, ?Unidad)
+       Deben coincidir con los límites de VARIABLES en preprocesamiento.py.
+   edad_minima_gestacion(?Meses)
+   --------------------------------------------------------------------------- */
+incompatibilidad(fiebre, hipotermia,
+    'La temperatura no puede estar alta (fiebre) y baja (hipotermia) a la vez.').
+incompatibilidad(encias_palidas, encias_rojo_intenso,
+    'Las encías no pueden estar pálidas y de color rojo intenso a la vez.').
+incompatibilidad(ausencia_de_orina, poliuria,
+    'No puede orinar en exceso (poliuria) si no le sale orina.').
+incompatibilidad(sin_defecar, diarrea,
+    'Si lleva más de 24 horas sin defecar no puede tener diarrea al mismo tiempo.').
+incompatibilidad(sin_defecar, diarrea_con_sangre,
+    'Si lleva más de 24 horas sin defecar no puede tener diarrea con sangre al mismo tiempo.').
+incompatibilidad(vacunacion_completa, vacunacion_incompleta,
+    'La vacunación no puede estar completa e incompleta a la vez.').
+
+rango_plausible(temperatura,      'la temperatura',               30,  45, '°C').
+rango_plausible(vomitos_24h,      'los vómitos en 24 h',           0,  20, 'veces').
+rango_plausible(llenado_capilar,  'el tiempo de llenado capilar',  0.5, 6, 's').
+rango_plausible(dias_sin_defecar, 'los días sin defecar',          0,  10, 'días').
+
+edad_minima_gestacion(6).
+
+/* ---------------------------------------------------------------------------
+   14.2 Reglas de consistencia
+   --------------------------------------------------------------------------- */
+
+%!  contradiccion(+Caso, -Contradiccion) is nondet.
+%   Contradicciones entre los hechos del caso y los datos del paciente.
+contradiccion(caso(_, _, _, H), contradiccion(hallazgos_incompatibles, [A, B], Motivo)) :-
+    incompatibilidad(A, B, Motivo),
+    memberchk(A, H),
+    memberchk(B, H).
+contradiccion(caso(_, _, macho, H),
+              contradiccion(dato_paciente, [gestante, macho],
+                            'Un paciente macho no puede estar gestante.')) :-
+    memberchk(gestante, H).
+contradiccion(caso(_, Edad, hembra, H), contradiccion(dato_paciente, [gestante, Edad], Motivo)) :-
+    memberchk(gestante, H),
+    edad_minima_gestacion(Minimo),
+    Edad < Minimo,
+    format(atom(Motivo),
+           'Una hembra de ~d meses es demasiado joven para estar gestante (mínimo ~d meses).',
+           [Edad, Minimo]).
+
+%!  contradicciones_caso(+Caso, -Contradicciones) is det.
+%   RECOLECCIÓN: todas las contradicciones del caso, sin duplicados.
+contradicciones_caso(Caso, Contradicciones) :-
+    findall(C, contradiccion(Caso, C), Cs),
+    sort(Cs, Contradicciones).
+
+%!  caso_consistente(+Caso) is semidet.
+%   NEGACIÓN POR FALLO: el caso es consistente si no hay ninguna contradicción.
+caso_consistente(Caso) :-
+    \+ contradiccion(Caso, _).
+
+%!  afirmado_y_negado(+Afirmados, +Negados, -Contradiccion) is nondet.
+afirmado_y_negado(Afirmados, Negados,
+                  contradiccion(afirmado_y_negado, [H], Motivo)) :-
+    member(H, Negados),
+    memberchk(H, Afirmados),
+    nombre_legible(H, Nombre),
+    format(atom(Motivo), 'Se afirma y a la vez se niega «~w».', [Nombre]).
+
+%!  medicion_plausible(+Medicion) is semidet.
+%   Medicion = [Variable, Valor] dentro del rango plausible de la variable.
+medicion_plausible([Variable, Valor]) :-
+    number(Valor),
+    rango_plausible(Variable, _, Minimo, Maximo, _),
+    Valor >= Minimo,
+    Valor =< Maximo.
+
+%!  medicion_imposible(+Mediciones, -Contradiccion) is nondet.
+medicion_imposible(Mediciones, contradiccion(medicion_imposible, [Variable, Valor], Motivo)) :-
+    member([Variable, Valor], Mediciones),
+    \+ medicion_plausible([Variable, Valor]),
+    rango_plausible(Variable, Nombre, Minimo, Maximo, Unidad),
+    format(atom(Motivo), 'El valor ~w ~w para ~w es imposible (rango plausible: ~w a ~w ~w).',
+           [Valor, Unidad, Nombre, Minimo, Maximo, Unidad]).
+
+%!  medicion_repetida(+Mediciones, -Contradiccion) is nondet.
+%   Dos valores plausibles distintos de la misma variable en un mismo texto.
+%   CORTE: basta con informar el primer par distinto de cada variable.
+medicion_repetida(Mediciones, contradiccion(medicion_repetida, [Variable, X, Y], Motivo)) :-
+    rango_plausible(Variable, Nombre, _, _, Unidad),
+    findall(V, ( member([Variable, V], Mediciones),
+                 medicion_plausible([Variable, V]) ), [X|Resto]),
+    once(( member(Y, Resto), Y =\= X )),
+    format(atom(Motivo), 'Se mencionan dos valores distintos para ~w: ~w y ~w ~w.',
+           [Nombre, X, Y, Unidad]).
+
+%!  contradicciones_texto(+Hallazgos, +Negados, +Mediciones, -Contradicciones) is det.
+%   Contradicciones que aparecen en el texto libre (los usa interpretar_texto/11).
+contradicciones_texto(Hallazgos, Negados, Mediciones, Contradicciones) :-
+    findall(C, ( afirmado_y_negado(Hallazgos, Negados, C)
+               ; medicion_repetida(Mediciones, C)
+               ; medicion_imposible(Mediciones, C) ),
+            Contradicciones).
+
+/* ---------------------------------------------------------------------------
+   14.3 Bloqueo del diagnóstico
+   --------------------------------------------------------------------------- */
+
+%!  dictamen(+Caso, +Contradicciones, -Diagnosticos, -Prioridad) is det.
+%   REGLA DE CORTE + VALOR POR DEFECTO (bloqueo): la segunda cláusula es el
+%   caso normal y acepta cualquier lista. Si hay al menos una contradicción,
+%   la primera responde inconsistente y el corte descarta la segunda.
+%   Sin el corte, al pedir otra solución (;) Prolog SÍ diagnosticaría el
+%   caso contradictorio: la prueba E4-6 comprueba que hay una sola respuesta.
+dictamen(_, [_|_], [], inconsistente) :- !.
+dictamen(Caso, _, Diagnosticos, Prioridad) :-
+    diagnosticos_detallados(Caso, Diagnosticos),
+    prioridad_caso(Caso, Diagnosticos, Prioridad).
+
+%!  recomendacion_caso(+Prioridad, +Contradicciones, +Alarmas, -Texto) is det.
+%   Con datos contradictorios, el texto explica cada motivo y, si hay signos
+%   de alarma, recuerda que no se debe esperar para llevarlo al veterinario.
+%   CORTE: la segunda cláusula es la recomendación normal.
+recomendacion_caso(inconsistente, Contradicciones, Alarmas, Texto) :- !,
+    recomendacion(inconsistente, Base),
+    findall(M, member(contradiccion(_, _, M), Contradicciones), Motivos),
+    atomic_list_concat(Motivos, ' ', TextoMotivos),
+    (   Alarmas == []
+    ->  Extra = ''
+    ;   Extra = ' Aun así hay signos de alarma: si el animal se ve grave, acuda de inmediato al veterinario.'
+    ),
+    atomic_list_concat([Base, ' ', TextoMotivos, Extra], Texto).
+recomendacion_caso(Prioridad, _, _, Texto) :-
+    recomendacion(Prioridad, Texto).
+
+/* ---------------------------------------------------------------------------
+   14.4 API para Python
+   --------------------------------------------------------------------------- */
+
+%!  verificar_consistencia(+Especie, +Edad, +Sexo, +Entrada, +Negados,
+%!                         -Contradicciones, -Recomendacion) is det.
+%   API PARA PYTHON. Revisa el caso completo, incluidos los hallazgos que el
+%   usuario negó: Contradicciones = [[Tipo, Elementos, Motivo], ...].
+%   Recomendacion = '' si el caso es consistente.
+%   CORTE + FALLBACK: con datos no válidos no hay nada que verificar.
+verificar_consistencia(Especie, Edad, Sexo, Entrada, Negados0, Contradicciones, Recomendacion) :-
+    preparar_caso(Especie, Edad, Sexo, Entrada, Caso, _), !,
+    atomos_seguros(Negados0, Negados),
+    Caso = caso(_, _, _, Validos),
+    contradicciones_caso(Caso, DelCaso),
+    findall(C, afirmado_y_negado(Validos, Negados, C), DelUsuario),
+    append(DelCaso, DelUsuario, Cs),
+    (   Cs == []
+    ->  Recomendacion = ''
+    ;   recomendacion_caso(inconsistente, Cs, [], Recomendacion)
+    ),
+    maplist(exportar_contradiccion, Cs, Contradicciones).
+verificar_consistencia(_, _, _, _, _, [], '').
+
+exportar_contradiccion(contradiccion(Tipo, Elementos, Motivo), [Tipo, Elementos, Motivo]).
 
 
 /*  ===========================================================================

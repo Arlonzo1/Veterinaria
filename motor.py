@@ -25,7 +25,7 @@ Predicados de Prolog invocados (ver docs/diccionario_predicados.md):
   nombre_hallazgo/2        -> MotorTriaVet.nombres_hallazgos()
   especie_paciente/2, sexo_paciente/2 -> MotorTriaVet.opciones_paciente()
   Entregable 3:
-  interpretar_texto/10     -> MotorTriaVet.interpretar()          lenguaje natural (DCG)
+  interpretar_texto/11     -> MotorTriaVet.interpretar()          lenguaje natural (DCG)
   vista_previa_diagnostico/3 -> MotorTriaVet.vista_previa_diagnostico()  Modo Experto
   aprender_diagnostico/3   -> MotorTriaVet.aprender_diagnostico()  assertz + .pl
   aprender_hallazgo/3      -> MotorTriaVet.aprender_hallazgo()     assertz + .pl
@@ -37,6 +37,8 @@ Predicados de Prolog invocados (ver docs/diccionario_predicados.md):
   catalogo_diagnosticos/1  -> MotorTriaVet.catalogo_diagnosticos() originales y aprendidos
   catalogo_hallazgos_completo/1 -> MotorTriaVet.catalogo_hallazgos()
   texto_aprendido/1        -> MotorTriaVet.texto_aprendido()
+  Entregable 4:
+  verificar_consistencia/7 -> MotorTriaVet.verificar_consistencia()  contradicciones
 """
 
 from __future__ import annotations
@@ -233,7 +235,7 @@ class Fragmento:
 
 @dataclass
 class Interpretacion:
-    """Respuesta de interpretar_texto/10 (gramática DCG de la Sección 11)."""
+    """Respuesta de interpretar_texto/11 (gramática DCG de la Sección 11)."""
 
     consulta: str
     especie: str | None
@@ -245,6 +247,34 @@ class Interpretacion:
     desconocidas: list[str]
     fragmentos: list[Fragmento]
     resumen: str
+    # Entregable 4: contradicciones encontradas en el propio texto
+    contradicciones: list[Contradiccion] = field(default_factory=list)
+
+
+@dataclass
+class Contradiccion:
+    """Hechos incompatibles detectados por la Sección 14 del .pl (Entregable 4).
+
+    tipo: hallazgos_incompatibles | dato_paciente | afirmado_y_negado |
+          medicion_repetida | medicion_imposible
+    """
+
+    tipo: str
+    elementos: list[str]
+    motivo: str
+
+
+@dataclass
+class Consistencia:
+    """Respuesta de verificar_consistencia/7."""
+
+    consulta: str
+    contradicciones: list[Contradiccion]
+    recomendacion: str
+
+    @property
+    def ok(self) -> bool:
+        return not self.contradicciones
 
 
 @dataclass
@@ -380,6 +410,15 @@ def _texto(valor: object) -> str:
 
 def _lista_textos(valor: object) -> list[str]:
     return [_texto(v) for v in valor] if isinstance(valor, list) else []
+
+
+def _a_contradicciones(filas: object) -> list[Contradiccion]:
+    """Filas de Prolog: [[Tipo, Elementos, Motivo], ...]."""
+    if not isinstance(filas, list):
+        return []
+    return [Contradiccion(_texto(t), [_texto(e) for e in (es if isinstance(es, list) else [es])],
+                          _texto(m))
+            for t, es, m in filas]
 
 
 def _a_diagnostico(fila: list) -> Diagnostico:
@@ -676,7 +715,7 @@ class MotorTriaVet:
     def consulta_interpretar(texto: str) -> str:
         return (
             f"interpretar_texto({termino_texto(texto)}, Especie, Edad, Sexo, Hallazgos, "
-            "Negados, Mediciones, Desconocidas, Fragmentos, Resumen)"
+            "Negados, Mediciones, Desconocidas, Fragmentos, Resumen, Contradicciones)"
         )
 
     def interpretar(self, texto: str) -> Interpretacion:
@@ -689,7 +728,7 @@ class MotorTriaVet:
         consulta = self.consulta_interpretar(limpio)
         soluciones = self.consultar(consulta, max_resultados=1)
         if not soluciones:
-            raise ErrorMotor("Prolog no devolvió respuesta para interpretar_texto/10.")
+            raise ErrorMotor("Prolog no devolvió respuesta para interpretar_texto/11.")
         s = soluciones[0]
 
         def opcional(valor):
@@ -711,7 +750,32 @@ class MotorTriaVet:
                 for t, v, x in s["Fragmentos"]
             ],
             resumen=_texto(s["Resumen"]),
+            contradicciones=_a_contradicciones(s["Contradicciones"]),
         )
+
+    # -- API del Entregable 4: manejo de contradicciones ---------------------
+
+    def recomendacion(self, prioridad: str) -> str:
+        """Texto de recomendacion/2 para una prioridad."""
+        s = self.consultar(f"recomendacion({termino_atomo(prioridad)}, T)", max_resultados=1)
+        return _texto(s[0]["T"]) if s else ""
+
+    @classmethod
+    def consulta_consistencia(cls, especie, edad, sexo, hallazgos, negados) -> str:
+        return (
+            f"verificar_consistencia({cls._argumentos_caso(especie, edad, sexo, hallazgos)}, "
+            f"{termino_lista(negados)}, Contradicciones, Recomendacion)"
+        )
+
+    def verificar_consistencia(self, especie, edad, sexo, hallazgos: Iterable[object],
+                               negados: Iterable[object] = ()) -> Consistencia:
+        """Contradicciones del caso (verificar_consistencia/7). Prolog decide qué choca."""
+        consulta = self.consulta_consistencia(especie, edad, sexo, list(hallazgos), list(negados))
+        s = self.consultar(consulta, max_resultados=1)
+        if not s:
+            return Consistencia(consulta, [], "")
+        return Consistencia(consulta, _a_contradicciones(s[0]["Contradicciones"]),
+                            _texto(s[0]["Recomendacion"]))
 
     # -- API del Entregable 3: Modo Experto ----------------------------------
 
@@ -868,6 +932,7 @@ ETIQUETA_NIVEL = {
     "bajo": "BAJO",
     "indeterminado": "INDETERMINADO",
     "datos_invalidos": "DATOS NO VÁLIDOS",
+    "inconsistente": "DATOS CONTRADICTORIOS",
 }
 
 

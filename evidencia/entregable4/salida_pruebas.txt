@@ -1,0 +1,173 @@
+==============================================================================
+ TriaVet · Pruebas del Entregable 4 (estrés y manejo de contradicciones)
+ Ejecutado: 2026-11-10 23:34:04
+==============================================================================
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E4-1 · Hallazgos incompatibles
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Cada par de incompatibilidad/3 bloquea el diagnóstico.
+  [fiebre + hipotermia] -> inconsistente · diagnósticos=[]
+      motivo: La temperatura no puede estar alta (fiebre) y baja (hipotermia) a la vez.
+  [encias_palidas + encias_rojo_intenso] -> inconsistente · diagnósticos=[]
+      motivo: Las encías no pueden estar pálidas y de color rojo intenso a la vez.
+  [ausencia_de_orina + poliuria] -> inconsistente · diagnósticos=[]
+      motivo: No puede orinar en exceso (poliuria) si no le sale orina.
+  [sin_defecar + diarrea] -> inconsistente · diagnósticos=[]
+      motivo: Si lleva más de 24 horas sin defecar no puede tener diarrea al mismo tiempo.
+  [sin_defecar + diarrea_con_sangre] -> inconsistente · diagnósticos=[]
+      motivo: Si lleva más de 24 horas sin defecar no puede tener diarrea con sangre al mismo tiempo.
+  [vacunacion_completa + vacunacion_incompleta] -> inconsistente · diagnósticos=[]
+      motivo: La vacunación no puede estar completa e incompleta a la vez.
+  Con signo de alarma -> alarmas=['convulsiones']
+      DATOS CONTRADICTORIOS: el sistema no emite un diagnóstico porque los hechos ingresados son lógicamente incompatibles. Corrija los datos señalados y vuelva a analizar. La temperatura no puede estar alta (fiebre) y baja (hipotermia) a la vez. Aun así hay signos de alarma: si el animal se ve grave, acuda de inmediato al veterinario.
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E4-2 · Datos del paciente imposibles
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Macho gestante y hembra demasiado joven se bloquean.
+  ('perro', 24, 'macho', ['gestante', 'vomito']) -> inconsistente · ['Un paciente macho no puede estar gestante.']
+  ('gato', 3, 'hembra', ['gestante']) -> inconsistente · ['Una hembra de 3 meses es demasiado joven para estar gestante (mínimo 6 meses).']
+  ('perro', 24, 'hembra', ['gestante', 'vomito']) -> medio · consistente
+  ('gato', 6, 'hembra', ['gestante']) -> medio · consistente
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E4-3 · Contradicciones en el texto libre (DCG)
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Afirmar y negar, dos valores de una medición y valores imposibles.
+  «Mi perro tiene fiebre y no tiene fiebre.»
+      hallazgos=['fiebre'] negados=['fiebre'] mediciones=[]
+      contradicciones=['Se afirma y a la vez se niega «Fiebre».']
+  «Mi gato tiene temperatura de 40 y temperatura de 36.»
+      hallazgos=[] negados=[] mediciones=[('temperatura', 40.0), ('temperatura', 36.0)]
+      contradicciones=['Se mencionan dos valores distintos para la temperatura: 40 y 36 °C.']
+  «Mi perro tiene 55 grados de temperatura.»
+      hallazgos=[] negados=[] mediciones=[]
+      contradicciones=['El valor 55 °C para la temperatura es imposible (rango plausible: 30 a 45 °C).']
+  «Mi perro vomitó 80 veces.»
+      hallazgos=[] negados=[] mediciones=[]
+      contradicciones=['El valor 80 veces para los vómitos en 24 h es imposible (rango plausible: 0 a 20 veces).']
+  «Mi perra tiene fiebre de 4 días.»
+      hallazgos=['fiebre'] negados=[] mediciones=[]
+      contradicciones=ninguna
+  «Mi perro tiene 40 grados y vomita.»
+      hallazgos=['vomito'] negados=[] mediciones=[('temperatura', 40.0)]
+      contradicciones=ninguna
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E4-4 · Flujo completo texto -> discretización -> Prolog
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : «hipotermia ... 40 grados» se bloquea aunque la fiebre la produzca Python.
+  «Mi perro de 5 años tiene hipotermia, está frío al tacto y tiene 40 grados. Está decaído.»
+    DCG: hallazgos=['hipotermia', 'letargo'] mediciones=[('temperatura', 40.0)]
+    Discretización (Python): ['fiebre']
+    Prolog: inconsistente · diagnósticos=[]
+    DATOS CONTRADICTORIOS: el sistema no emite un diagnóstico porque los hechos ingresados son lógicamente incompatibles. Corrija los datos señalados y vuelva a analizar. La temperatura no puede estar alta (fiebre) y baja (hipotermia) a la vez. Aun así hay signos de alarma: si el animal se ve grave, acuda de inmediato al veterinario.
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E4-5 · Afirmado o medido contra negado
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Medir fiebre y responder que no tiene fiebre es una contradicción.
+  ?- verificar_consistencia('perro', 24, 'macho', ['fiebre', 'vomito'], ['fiebre'], Contradicciones, Recomendacion).
+      ['Se afirma y a la vez se niega «Fiebre».']
+  ¿Qué falta? -> estado=inconsistente sugerencias=0
+  Vomita y no tiene fiebre -> consistente
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E4-6 · Regla de corte de dictamen/4
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Con contradicciones hay una sola respuesta posible.
+  ?- Caso = caso(perro, 24, macho, [fiebre, hipotermia, vomito]), contradicciones_caso(Caso, C), findall(P, dictamen(Caso, C, _, P), L).
+      L = ['inconsistente']
+  Caso consistente -> L = ['critico']
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E4-7 · Sin falsos positivos
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Los casos legítimos se siguen diagnosticando igual.
+  «Mi perrito de 4 meses vomita, está muy decaído, no quiere comer y tien…» -> critico · ['parvovirosis']
+  «Mi gato macho de 3 años hace fuerza para orinar, no le sale orina y ll…» -> critico · ['obstruccion_uretral']
+  «Mi perro de 4 años estuvo encerrado en el carro al sol, jadea mucho, e…» -> critico · ['golpe_de_calor']
+  «Mi pastor alemán de 4 años tiene la barriga hinchada y dura, hace arca…» -> critico · ['dilatacion_torsion_gastrica']
+  «Mi perra de 5 años está gestante, vomita y tiene diarrea.…» -> medio · ['gastroenteritis_aguda']
+  «Mi perro de 3 años no tiene fiebre ni tos, pero vomita.…» -> bajo · ['gastroenteritis_aguda']
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E4-8 · Entradas hostiles y ambiguas (auditoría cruzada)
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Texto vacío, código, emojis, números absurdos y datos fuera de dominio no rompen el sistema.
+  «» (0 car.) -> indeterminado · 1 ms
+  «     » (5 car.) -> indeterminado · 1 ms
+  «asdf qwer zxcv» (14 car.) -> indeterminado · 2 ms
+  «'), halt. %» (11 car.) -> indeterminado · 1 ms
+  «X» (1 car.) -> indeterminado · 1 ms
+  «_» (1 car.) -> indeterminado · 1 ms
+  «fiebre(X) :- true.» (18 car.) -> bajo · 1 ms
+  «🐶🐱🔥🤒» (4 car.) -> indeterminado · 1 ms
+  «1234567890» (10 car.) -> indeterminado · 1 ms
+  «no no no no no» (14 car.) -> indeterminado · 2 ms
+  «no tiene ni ni ni o o» (21 car.) -> indeterminado · 2 ms
+  «tiene fiebre fiebre fiebre fiebre» (33 car.) -> bajo · 2 ms
+  «Mi perro tiene 999999999999999999999 grados» (43 car.) -> indeterminado · 2 ms
+  «Mi perro tiene -5 grados» (24 car.) -> indeterminado · 2 ms · ['medicion_imposible']
+  «Mi perro tiene 40,5 grados y 41,2 grados» (40 car.) -> indeterminado · 2 ms · ['medicion_repetida']
+  «Mi perro de -3 años vomita» (26 car.) -> bajo · 2 ms
+  «Mi perro de 900 años vomita» (27 car.) -> datos_invalidos · 1 ms
+  «mi perro esta bien» (18 car.) -> indeterminado · 2 ms
+  «MI PERRO TIENE FIEBRE Y VOMITA» (30 car.) -> bajo · 2 ms
+  «mi perro tiene fiebre.mi perro tiene fiebre.mi …» (6600 car.) -> indeterminado · 38 ms
+  ('dinosaurio', 24, 'macho', ['fiebre']) -> datos_invalidos · ignorados=['fiebre']
+  ('perro', -5, 'macho', ['fiebre']) -> datos_invalidos · ignorados=['fiebre']
+  ('perro', 9999, 'macho', ['fiebre']) -> datos_invalidos · ignorados=['fiebre']
+  ('perro', 24, 'otro', ['fiebre']) -> datos_invalidos · ignorados=['fiebre']
+  ('perro', 24, 'macho', ['no_existe', 'fiebre', 'fiebre', 'FIEBRE']) -> bajo · ignorados=['no_existe']
+  ('perro', 'X', 'macho', ['fiebre']) -> datos_invalidos · ignorados=['fiebre']
+  Tiempo por entrada: promedio 3 ms · máximo 38 ms
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E4-9 · Estrés combinatorio: todos los pares
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : Solo los pares de incompatibilidad/3 se bloquean (ni más ni menos).
+  55 hallazgos -> 1485 pares analizados en 0.7 s (0.5 ms por caso)
+  Pares bloqueados: 6 · pares incompatibles en la base: 6
+      ausencia_de_orina + poliuria
+      diarrea + sin_defecar
+      diarrea_con_sangre + sin_defecar
+      encias_palidas + encias_rojo_intenso
+      fiebre + hipotermia
+      vacunacion_completa + vacunacion_incompleta
+Veredicto: ✔ PASÓ
+
+──────────────────────────────────────────────────────────────────────────────
+PRUEBA E4-10 · Estrés aleatorio con invariantes
+──────────────────────────────────────────────────────────────────────────────
+Objetivo : 400 casos al azar cumplen las reglas de bloqueo.
+  400 casos aleatorios (semilla 2026) en 0.3 s · bloqueados: 52
+  Invariantes verificadas en cada caso:
+      bloqueado => sin diagnósticos y verificar_consistencia lo confirma
+      afirmado y negado a la vez => contradicción afirmado_y_negado
+      caso consistente => nunca se bloquea
+Veredicto: ✔ PASÓ
+
+==============================================================================
+ RESUMEN
+==============================================================================
+ ✔ Prueba E4-1 · Hallazgos incompatibles
+ ✔ Prueba E4-2 · Datos del paciente imposibles
+ ✔ Prueba E4-3 · Contradicciones en el texto libre (DCG)
+ ✔ Prueba E4-4 · Flujo completo texto -> discretización -> Prolog
+ ✔ Prueba E4-5 · Afirmado o medido contra negado
+ ✔ Prueba E4-6 · Regla de corte de dictamen/4
+ ✔ Prueba E4-7 · Sin falsos positivos
+ ✔ Prueba E4-8 · Entradas hostiles y ambiguas (auditoría cruzada)
+ ✔ Prueba E4-9 · Estrés combinatorio: todos los pares
+ ✔ Prueba E4-10 · Estrés aleatorio con invariantes
+
+ 10 de 10 pruebas aprobadas en 1.2 s.

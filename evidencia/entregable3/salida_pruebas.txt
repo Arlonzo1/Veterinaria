@@ -1,16 +1,16 @@
 ==============================================================================
  TriaVet · Pruebas del Entregable 3 (DCG y aprendizaje en caliente)
- Ejecutado: 2026-11-10 22:46:41
+ Ejecutado: 2026-11-10 23:08:39
 ==============================================================================
-Copia de trabajo de la base: C:\Users\maria\AppData\Local\Temp\triavet_5d94jjx1\base_conocimiento.pl
-Huella inicial del .pl: cf8c882d5acdb4d5
+Copia de trabajo de la base: C:\Users\maria\AppData\Local\Temp\triavet_8_zre72q\base_conocimiento.pl
+Huella inicial del .pl: 1c9d0b8f21b5c67e
 
 ──────────────────────────────────────────────────────────────────────────────
 PRUEBA E3-1 · DCG: extracción de hechos del texto libre
 ──────────────────────────────────────────────────────────────────────────────
 Objetivo : La gramática extrae especie, edad y hallazgos de una oración del tutor.
   Texto: «Mi perrito de 4 meses vomita mucho, tiene diarrea con sangre y está muy decaído. No tiene fiebre ni tos. Nunca lo vacunaron.»
-  ?- interpretar_texto('Mi perrito de 4 meses vomita mucho, tiene diarrea con sangre y está muy decaído. No tiene fiebre ni tos. Nunca lo vacunaron.', Especie, Edad, Sexo, Hallazgos, Negados, Mediciones, Desconocidas, Fragmentos, Resumen).
+  ?- interpretar_texto('Mi perrito de 4 meses vomita mucho, tiene diarrea con sangre y está muy decaído. No tiene fiebre ni tos. Nunca lo vacunaron.', Especie, Edad, Sexo, Hallazgos, Negados, Mediciones, Desconocidas, Fragmentos, Resumen, Contradicciones).
   Especie=perro · Edad=4 meses · Sexo=None
   Hallazgos=['diarrea_con_sangre', 'letargo', 'vacunacion_incompleta', 'vomito_persistente']
 Veredicto: ✔ PASÓ
@@ -84,17 +84,17 @@ Objetivo : El hallazgo y el diagnóstico nuevos se usan de inmediato y quedan es
   Dictamen en caliente: [('leptospirosis', 'alto', 80)]
   Traza: Leptospirosis: regla aprendida en Modo Experto (Dra. Prueba); el caso cumple su perfil
   Sección 13 del .pl:
-    %% Hallazgo aprendido: ictericia · experto: Dra. Prueba · 2026-11-10 22:46
-    hallazgo_aprendido(ictericia, 'Dra. Prueba', '2026-11-10 22:46').
+    %% Hallazgo aprendido: ictericia · experto: Dra. Prueba · 2026-11-10 23:08
+    hallazgo_aprendido(ictericia, 'Dra. Prueba', '2026-11-10 23:08').
     signo(ictericia, general).
     nombre_hallazgo(ictericia, 'Piel u ojos amarillos (ictericia)').
     pregunta(ictericia, '¿Tiene la piel, las encías o el blanco de los ojos amarillos?').
-    expresion_aprendida('ojos amarillos', ictericia, 'Dra. Prueba', '2026-11-10 22:46').
-    expresion_aprendida('piel amarilla', ictericia, 'Dra. Prueba', '2026-11-10 22:46').
-    expresion_aprendida('amarill*', ictericia, 'Dra. Prueba', '2026-11-10 22:46').
+    expresion_aprendida('ojos amarillos', ictericia, 'Dra. Prueba', '2026-11-10 23:08').
+    expresion_aprendida('piel amarilla', ictericia, 'Dra. Prueba', '2026-11-10 23:08').
+    expresion_aprendida('amarill*', ictericia, 'Dra. Prueba', '2026-11-10 23:08').
     
-    %% Diagnóstico aprendido: leptospirosis · experto: Dra. Prueba · 2026-11-10 22:46
-    diagnostico_aprendido(leptospirosis, 'Dra. Prueba', '2026-11-10 22:46').
+    %% Diagnóstico aprendido: leptospirosis · experto: Dra. Prueba · 2026-11-10 23:08
+    diagnostico_aprendido(leptospirosis, 'Dra. Prueba', '2026-11-10 23:08').
     nombre_diagnostico(leptospirosis, 'Leptospirosis').
     especie_afectada(leptospirosis, perro).
     curso(leptospirosis, agudo).
@@ -135,7 +135,7 @@ Objetivo : Se retira lo aprendido y el archivo vuelve a su estado original.
   ?- olvidar('diagnostico', 'leptospirosis', Estado, Mensajes). -> ['Se olvidó el diagnóstico «leptospirosis».']
   ?- olvidar('hallazgo', 'ictericia', Estado, Mensajes). -> ['Se olvidó el hallazgo «ictericia».']
   Olvidar un diagnóstico original -> ['«parvovirosis» no es conocimiento aprendido en Modo Experto.']
-  Huella del .pl: cf8c882d5acdb4d5 (original cf8c882d5acdb4d5)
+  Huella del .pl: 1c9d0b8f21b5c67e (original 1c9d0b8f21b5c67e)
 Veredicto: ✔ PASÓ
 
 ==============================================================================

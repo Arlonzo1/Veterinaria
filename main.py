@@ -52,6 +52,7 @@ import streamlit as st
 
 from motor import (
     ETIQUETA_NIVEL,
+    Contradiccion,
     ErrorMotor,
     Explicacion,
     HipotesisDescartada,
@@ -90,6 +91,9 @@ CASOS_DEMO = {
               "babea mucho y está inquieto."),
     "3": ("Ojos amarillos (regla del Modo Experto)",
           "Mi perro de 3 años tiene los ojos amarillos, fiebre y está decaído."),
+    "4": ("Contradicción: frío y 40 grados",
+          "Mi perro de 5 años tiene hipotermia, está frío al tacto y tiene 40 grados de "
+          "temperatura. Está decaído."),
 }
 
 PESTANAS = {"consulta": "🐾 Consulta", "porque": "🔍 ¿Por qué?",
@@ -106,7 +110,19 @@ ESTILO_PRIORIDAD = {
     "bajo": ("#15803d", "#f0fdf4", "✅"),
     "indeterminado": ("#475569", "#f8fafc", "💬"),
     "datos_invalidos": ("#7f1d1d", "#fef2f2", "⛔"),
+    "inconsistente": ("#a21caf", "#fdf4ff", "⚠️"),
 }
+# Entregable 4: icono y título de cada tipo de contradicción (los motivos vienen de Prolog).
+TIPO_CONTRADICCION = {
+    "hallazgos_incompatibles": ("⚡", "Hallazgos incompatibles"),
+    "dato_paciente": ("🚫", "No es posible en este paciente"),
+    "afirmado_y_negado": ("↔️", "Se afirma y se niega"),
+    "medicion_repetida": ("🔁", "Dos valores para la misma medición"),
+    "medicion_imposible": ("📛", "Medición imposible"),
+}
+# Contradicciones que solo existen en el texto: al pasar el texto al formulario
+# se pierden (un campo guarda un solo valor), así que se conservan aparte.
+SOLO_TEXTO = ("medicion_repetida", "medicion_imposible")
 ESTILO_FRAGMENTO = {
     "hallazgo": ("frag-ok", "hallazgo"),
     "negado": ("frag-no", "lo niega"),
@@ -294,6 +310,7 @@ def interpretar_descripcion(grupo_de: dict[str, str], grupos: list[str]) -> None
         st.session_state.error_interpretacion = str(exc)
         return
     st.session_state.interpretacion = inter
+    st.session_state.avisos_texto_descartados = False
     if inter.especie:
         st.session_state.especie = inter.especie
     if inter.edad is not None:
@@ -351,6 +368,36 @@ def olvidar_negados() -> None:
     st.session_state.negados = []
 
 
+def quitar_negado(hallazgo: str) -> None:
+    st.session_state.negados = [n for n in st.session_state.negados if n != hallazgo]
+
+
+def descartar_avisos_texto() -> None:
+    st.session_state.avisos_texto_descartados = True
+
+
+def panel_contradicciones(contradicciones: list[Contradiccion], nombres) -> None:
+    """Entregable 4: lista de hechos incompatibles detectados por Prolog."""
+    with st.container(border=True):
+        st.markdown("#### ⚠️ Diagnóstico bloqueado: hay datos contradictorios")
+        st.caption("Prolog (Sección 14 · verificar_consistencia/7) encontró hechos que no pueden ser "
+                   "ciertos a la vez. Corrija la descripción o los hallazgos marcados y el análisis "
+                   "se reanuda solo.")
+        for i, c in enumerate(contradicciones):
+            icono, titulo = TIPO_CONTRADICCION.get(c.tipo, ("•", c.tipo))
+            columna, boton = st.columns([5, 2])
+            columna.markdown(f"{icono} **{titulo}** · {html.escape(c.motivo)}")
+            if c.tipo == "afirmado_y_negado" and c.elementos:
+                h = c.elementos[0]
+                boton.button("Sí lo presenta", key=f"quitar_neg_{h}_{i}", on_click=quitar_negado,
+                             args=(h,), help=f"Quita «{nombre(h, nombres)}» de los hallazgos negados.",
+                             width="stretch")
+            elif c.tipo in SOLO_TEXTO:
+                boton.button("Ignorar aviso", key=f"ignorar_{i}", on_click=descartar_avisos_texto,
+                             help="Usar los valores que quedaron en el formulario de mediciones.",
+                             width="stretch")
+
+
 def recargar_base() -> None:
     obtener_motor().recargar()
     st.session_state.aviso_recarga = True
@@ -371,7 +418,7 @@ def salir_experto() -> None:
 
 
 def aplicar_parametros_url(grupo_de: dict[str, str], grupos: list[str]) -> str | None:
-    """?caso=1|2|2b|2c|extra|3 carga un ejemplo y ?panel=... elige la pestaña."""
+    """?caso=1|2|2b|2c|extra|3|4 carga un ejemplo y ?panel=... elige la pestaña."""
     if st.session_state.get("url_aplicada"):
         return None
     st.session_state.url_aplicada = True
@@ -576,7 +623,8 @@ def barra_lateral(especies, sexos, grupo_de, grupos) -> None:
 # Pestaña Consulta
 # ---------------------------------------------------------------------------
 
-def panel_consulta(resultado, catalogo, nombres, grupo_de, grupos, derivados, negados) -> None:
+def panel_consulta(resultado, catalogo, nombres, grupo_de, grupos, derivados, negados,
+                   contradicciones: list[Contradiccion], recomendacion_bloqueo: str) -> None:
     izquierda, derecha = st.columns([1.05, 1], gap="large")
 
     with izquierda:
@@ -606,6 +654,9 @@ def panel_consulta(resultado, catalogo, nombres, grupo_de, grupos, derivados, ne
                     unsafe_allow_html=True)
                 st.markdown(f'<div class="tv-resumen">🗨️ {html.escape(inter.resumen)}</div>',
                             unsafe_allow_html=True)
+                if inter.contradicciones:
+                    st.warning("**El texto se contradice:**\n\n" + "\n".join(
+                        f"- {c.motivo}" for c in inter.contradicciones), icon="⚠️")
                 if inter.desconocidas:
                     st.caption("Palabras que el léxico aún no conoce: "
                                + ", ".join(f"«{p}»" for p in inter.desconocidas)
@@ -634,6 +685,14 @@ def panel_consulta(resultado, catalogo, nombres, grupo_de, grupos, derivados, ne
 
     with derecha:
         tarjeta("Resultado del triage", 3)
+        if contradicciones:
+            # Entregable 4: el diagnóstico queda bloqueado mientras haya contradicciones.
+            banner_prioridad("inconsistente", recomendacion_bloqueo)
+            if resultado.alarmas:
+                st.error("**Signos de alarma:** " + ", ".join(nombre(a, nombres) for a in resultado.alarmas),
+                         icon="🚨")
+            panel_contradicciones(contradicciones, nombres)
+            return
         banner_prioridad(resultado.prioridad, resultado.recomendacion)
         if resultado.alarmas:
             st.error("**Signos de alarma:** " + ", ".join(nombre(a, nombres) for a in resultado.alarmas),
@@ -659,7 +718,11 @@ def panel_consulta(resultado, catalogo, nombres, grupo_de, grupos, derivados, ne
 # ---------------------------------------------------------------------------
 
 def panel_por_que(explicaciones: list[Explicacion], descartadas: list[HipotesisDescartada],
-                  nombres) -> None:
+                  nombres, bloqueado: bool = False) -> None:
+    if bloqueado:
+        st.warning("No hay conclusiones que auditar: el diagnóstico está bloqueado porque el caso "
+                   "tiene datos contradictorios. Revise la pestaña Consulta.", icon="⚠️")
+        return
     if not explicaciones:
         st.info("No hay conclusiones que auditar todavía: describa el caso en la pestaña Consulta.")
         return
@@ -1267,10 +1330,13 @@ def main() -> None:
     derivados = discretizador.discretizar(mediciones_actuales(), especie)
     medidos = [h.hallazgo for h in derivados if h.hallazgo]
     hallazgos = list(dict.fromkeys(hallazgos_marcados(grupos) + medidos))
-    # Una medición objetiva prevalece sobre una negación del texto.
-    negados = [n for n in st.session_state.negados if n not in hallazgos]
+    # Entregable 4: los negados viajan tal cual. Si el usuario niega algo que
+    # marcó o que se midió, Prolog lo señala como contradicción en vez de que
+    # Python decida en silencio cuál de los dos datos vale.
+    negados = list(st.session_state.negados)
 
     try:
+        consistencia = motor.verificar_consistencia(especie, edad, sexo, hallazgos, negados)
         resultado = motor.analizar_caso(especie, edad, sexo, hallazgos)
         explicaciones = motor.explicar(especie, edad, sexo, hallazgos)
         descartadas = motor.descartadas(especie, edad, sexo, hallazgos)
@@ -1279,6 +1345,16 @@ def main() -> None:
     except ErrorMotor as exc:
         st.error(f"Error al consultar el motor de inferencia: {exc}")
         st.stop()
+
+    contradicciones = list(consistencia.contradicciones)
+    inter_actual = st.session_state.interpretacion
+    if inter_actual and not st.session_state.get("avisos_texto_descartados"):
+        contradicciones += [c for c in inter_actual.contradicciones if c.tipo in SOLO_TEXTO]
+    bloqueado = bool(contradicciones)
+    recomendacion_bloqueo = consistencia.recomendacion
+    if bloqueado and not recomendacion_bloqueo:
+        recomendacion_bloqueo = " ".join(
+            [motor.recomendacion("inconsistente")] + [c.motivo for c in contradicciones])
 
     st.markdown(
         '<div class="tv-hero"><h1>🐾 TriaVet</h1>'
@@ -1294,9 +1370,10 @@ def main() -> None:
         list(PESTANAS.values()), default=pestana_inicial,
     )
     with consulta_tab:
-        panel_consulta(resultado, catalogo, nombres, grupo_de, grupos, derivados, negados)
+        panel_consulta(resultado, catalogo, nombres, grupo_de, grupos, derivados, negados,
+                       contradicciones, recomendacion_bloqueo)
     with por_que:
-        panel_por_que(explicaciones, descartadas, nombres)
+        panel_por_que(explicaciones, descartadas, nombres, bloqueado)
     with que_falta:
         panel_que_falta(reco, desempate, nombres, grupo_de)
     with experto:
@@ -1305,8 +1382,9 @@ def main() -> None:
         lista = []
         inter = st.session_state.interpretacion
         if inter:
-            lista.append(("Lenguaje natural · interpretar_texto/10 (DCG)", inter.consulta))
+            lista.append(("Lenguaje natural · interpretar_texto/11 (DCG)", inter.consulta))
         lista += [
+            ("Consistencia · verificar_consistencia/7 (Entregable 4)", consistencia.consulta),
             ("Dictamen · analizar_caso/10", resultado.consulta),
             ("¿Por qué? · explicar_caso/5", motor.consulta_explicacion(especie, edad, sexo, hallazgos)),
             ("¿Por qué? · hipotesis_descartadas/5", motor.consulta_descartadas(especie, edad, sexo, hallazgos)),
